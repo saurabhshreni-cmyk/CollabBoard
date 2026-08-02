@@ -1,0 +1,81 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  backend:
+    name: Backend (Java 17 / Maven)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: collabboard-backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: temurin
+          cache: maven
+
+      - name: Run tests
+        run: mvn -B test
+
+      - name: Package
+        run: mvn -B package -DskipTests
+
+      - name: Upload jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: collabboard-backend-jar
+          path: collabboard-backend/target/*.jar
+          if-no-files-found: error
+
+  frontend:
+    name: Frontend (Node 20 / Vite)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: collabboard-frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: collabboard-frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Upload build output
+        uses: actions/upload-artifact@v4
+        with:
+          name: collabboard-frontend-dist
+          path: collabboard-frontend/dist
+          if-no-files-found: error
+
+  docker:
+    name: Docker images build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build backend image
+        run: docker build -t collabboard-backend:ci ./collabboard-backend
+
+      - name: Build frontend image
+        run: docker build -t collabboard-frontend:ci ./collabboard-frontend

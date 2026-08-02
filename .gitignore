@@ -1,0 +1,15 @@
+# Dependencies / build output
+**/node_modules/
+**/dist/
+**/target/
+**/.env
+**/coverage/
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+*.log
+.idea/
+.vscode/
+*.iml
+*.tmp
