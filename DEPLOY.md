@@ -40,40 +40,24 @@ New-NetFirewallRule -DisplayName "CollabBoard" -Direction Inbound -LocalPort 517
 
 Three pieces: a database and backend on **Render**, the frontend on **Vercel**.
 
-### Step 1 — Push to GitHub
+### Step 1 — Push to GitHub ✅ done
 
-The local branch is `master`; GitHub's default is `main`. Rename it first so the
-two agree (otherwise Render and Vercel watch a branch that never updates):
+The repository is live at
+**https://github.com/saurabhshreni-cmyk/CollabBoard** on the `main` branch, and
+the CI workflow (backend tests, frontend tests, Docker image builds) runs green
+on every push. Render and Vercel both deploy straight from that repo, so there
+is nothing to do here — just keep pushing to `main`.
 
-```bash
-git branch -M main
-```
-
-Then commit everything:
+To push future changes:
 
 ```bash
 git add .
-git commit -m "Real-time text editing, LAN sharing, and deployment config"
+git commit -m "your message"
+git push
 ```
 
-Create the repo. **With the GitHub CLI** (`winget install GitHub.cli`, then
-`gh auth login`):
-
-```bash
-gh repo create collabboard --public --source=. --push
-```
-
-**Without it:** create an empty repo at
-[github.com/new](https://github.com/new) — no README, no .gitignore — then:
-
-```bash
-git remote add origin https://github.com/<your-username>/collabboard.git
-git push -u origin main
-```
-
-Check `git status` shows nothing unexpected before pushing. `.gitignore` already
-excludes `node_modules/`, `target/`, `logs/` and any `.env` file, so no secrets
-or build output should be included.
+`.gitignore` already excludes `node_modules/`, `target/`, `logs/` and any `.env`
+file, so no secrets or build output get committed.
 
 ### Step 2 — Backend + database on Render
 
