@@ -1,3 +1,5 @@
+import { useEffect, useState } from 'react';
+
 const BG_OPTIONS = [
   { label: 'Navy', value: '#1a1a2e' },
   { label: 'White', value: '#ffffff' },
@@ -19,6 +21,17 @@ export default function SettingsPanel({
   setSnapEnabled,
   onClear,
 }) {
+  // Controlled draft so a rename broadcast by a collaborator is reflected here
+  // too, instead of the field staying stuck on its initial value.
+  const [nameDraft, setNameDraft] = useState(boardName || '');
+  useEffect(() => setNameDraft(boardName || ''), [boardName]);
+
+  const commitName = () => {
+    const trimmed = nameDraft.trim() || 'Untitled Board';
+    setNameDraft(trimmed);
+    if (trimmed !== boardName) onRenameBoard(trimmed);
+  };
+
   return (
     <>
       {open && <div className="fixed inset-0 bg-black/40 z-40" onClick={onClose} />}
@@ -36,9 +49,14 @@ export default function SettingsPanel({
           <div>
             <label className="block text-xs text-gray-400 mb-2">Board name</label>
             <input
-              defaultValue={boardName}
+              value={nameDraft}
               maxLength={100}
-              onBlur={(e) => onRenameBoard(e.target.value.trim() || 'Untitled Board')}
+              onChange={(e) => setNameDraft(e.target.value)}
+              onBlur={commitName}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') e.currentTarget.blur();
+                if (e.key === 'Escape') setNameDraft(boardName || '');
+              }}
               className="w-full bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500"
             />
           </div>

@@ -12,6 +12,10 @@ import Minimap from './Minimap.jsx';
 import GridLayer from './GridLayer.jsx';
 import SelectionToolbar from './SelectionToolbar.jsx';
 import { generateId, snap, freehandPath } from '../utils/drawingUtils.js';
+import {
+  BOARD_FONT, TEXT_LINE_HEIGHT, textMetrics,
+  STICKY_WIDTH, STICKY_HEIGHT, STICKY_FONT_SIZE, STICKY_TEXT_COLOR,
+} from '../utils/textConfig.js';
 
 const MIN_SCALE = 0.1;
 const MAX_SCALE = 5;
@@ -55,6 +59,8 @@ const Canvas = forwardRef(function Canvas(props, ref) {
   const panning = useRef(false);
   const panStart = useRef(null);
   const spaceHeld = useRef(false);
+  const textareaRef = useRef(null);
+  const openedAt = useRef(0);
 
   const registerRef = (id, node) => {
     if (node) nodeRefs.current.set(id, node);
@@ -149,6 +155,15 @@ const Canvas = forwardRef(function Canvas(props, ref) {
       return;
     }
 
+    // A click anywhere on the board finishes an open text edit first. The text
+    // tool suppresses the default mousedown behaviour (see below), which also
+    // suppresses the textarea's blur — so without this the pending text would
+    // be silently dropped when starting the next one.
+    if (textEditor) {
+      commitText();
+      return;
+    }
+
     const p = worldPointer();
     if (!p) return;
     const sx = snapW(p.x);
@@ -194,18 +209,28 @@ const Canvas = forwardRef(function Canvas(props, ref) {
     }
 
     if (tool === 'text') {
+      // Without this, the browser's default mousedown focus handling moves
+      // focus to the stage canvas right after the textarea mounts. That fires
+      // onBlur, which commits an empty string and closes the editor again —
+      // so the box appears to flash and nothing can be typed.
+      if (e.evt && e.evt.preventDefault) e.evt.preventDefault();
       openTextEditor({ x: sx, y: sy, isSticky: false });
       return;
     }
 
     if (tool === 'stickyNote') {
+      if (e.evt && e.evt.preventDefault) e.evt.preventDefault();
       const shape = {
         id: generateId(), tool: 'stickyNote', x: sx, y: sy,
-        width: 200, height: 150, fillColor: stickyColor, text: '', fontSize: 18,
-        userId: identity.userId,
+        width: STICKY_WIDTH, height: STICKY_HEIGHT, fillColor: stickyColor,
+        text: '', fontSize: STICKY_FONT_SIZE, userId: identity.userId,
       };
       addShape(shape);
-      openTextEditor({ id: shape.id, x: sx, y: sy, isSticky: true, value: '', fontSize: 18 });
+      openTextEditor({
+        id: shape.id, x: sx, y: sy, isSticky: true, value: '',
+        fontSize: STICKY_FONT_SIZE, color: STICKY_TEXT_COLOR, fontStyle: 'normal',
+        fillColor: stickyColor,
+      });
       return;
     }
 
@@ -321,35 +346,88 @@ const Canvas = forwardRef(function Canvas(props, ref) {
   };
 
   const openTextEditor = (opts) => {
+    openedAt.current = Date.now();
     setTextEditor({
       id: opts.id || null, x: opts.x, y: opts.y, value: opts.value || '',
-      isSticky: opts.isSticky || false, fontSize: opts.fontSize || fontSize,
+      isSticky: opts.isSticky || false,
+      fontSize: opts.fontSize || fontSize,
+      // An existing shape keeps its own styling while being edited; a brand new
+      // one picks up whatever the toolbar currently has selected.
+      color: opts.color || strokeColor,
+      fontStyle: opts.fontStyle || fontStyle,
+      fillColor: opts.fillColor || stickyColor,
     });
   };
 
   const editExistingText = (shape) => {
     setSelectedIds([]);
+    const isSticky = shape.tool === 'stickyNote';
     openTextEditor({
       id: shape.id, x: shape.x, y: shape.y, value: shape.text || '',
-      isSticky: shape.tool === 'stickyNote',
-      fontSize: shape.fontSize || (shape.tool === 'stickyNote' ? 18 : fontSize),
+      isSticky,
+      fontSize: shape.fontSize || (isSticky ? STICKY_FONT_SIZE : fontSize),
+      color: isSticky ? STICKY_TEXT_COLOR : (shape.color || strokeColor),
+      fontStyle: shape.fontStyle || 'normal',
+      // Show the note being edited in its own colour, not the toolbar's.
+      fillColor: shape.fillColor || stickyColor,
     });
   };
+
+  // Focus after the browser has finished the click that opened the editor,
+  // otherwise the focus is immediately stolen back by the canvas.
+  useEffect(() => {
+    if (!textEditor) return undefined;
+    const raf = requestAnimationFrame(() => {
+      const el = textareaRef.current;
+      if (!el) return;
+      el.focus({ preventScroll: true });
+      el.setSelectionRange(el.value.length, el.value.length);
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [textEditor?.id, textEditor?.x, textEditor?.y]);
+
+  // Grow a plain text box downwards as lines are added, so the editor always
+  // shows exactly as much as the canvas will render.
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el || !textEditor || textEditor.isSticky) return;
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight}px`;
+  }, [textEditor?.value, textEditor?.fontSize, stageScale, textEditor?.isSticky]);
 
   const commitText = () => {
     if (!textEditor) return;
     const value = textEditor.value;
     const existing = textEditor.id ? shapes.find((s) => s.id === textEditor.id) : null;
     if (existing) {
-      if (value.trim() === '' && existing.tool === 'text') deleteShapes([existing.id]);
-      else updateShape({ ...existing, text: value });
+      const emptied = value.trim() === '';
+      // An empty sticky is still a useful object; an empty text label is not.
+      if (emptied && existing.tool === 'text') {
+        deleteShapes([existing.id]);
+      } else {
+        updateShape({
+          ...existing,
+          text: value,
+          fontSize: textEditor.fontSize,
+          ...(existing.tool === 'text'
+            ? { color: textEditor.color, fontStyle: textEditor.fontStyle }
+            : {}),
+        });
+      }
     } else if (value.trim() !== '') {
       addShape({
         id: generateId(), tool: 'text', x: textEditor.x, y: textEditor.y, text: value,
-        color: strokeColor, fontSize: textEditor.fontSize, fontStyle, userId: identity.userId,
+        color: textEditor.color, fontSize: textEditor.fontSize,
+        fontStyle: textEditor.fontStyle, userId: identity.userId,
       });
     }
     setTextEditor(null);
+  };
+
+  const cancelText = () => {
+    // Discard an unsaved new shape entirely; leave existing shapes as they were.
+    if (textEditor && !textEditor.id) setTextEditor(null);
+    else commitText();
   };
 
   const exportImage = (mimeType) => {
@@ -477,6 +555,19 @@ const Canvas = forwardRef(function Canvas(props, ref) {
         </Layer>
       </Stage>
 
+      {shapes.length === 0 && !textEditor && !currentStroke && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none select-none">
+          <div className="text-center">
+            <p className="text-gray-500 text-lg font-medium">This board is empty</p>
+            <p className="text-gray-600 text-sm mt-1">
+              Pick a tool below and start drawing · press{' '}
+              <kbd className="bg-gray-800 border border-gray-700 rounded px-1.5 py-0.5 text-xs font-mono text-gray-400">?</kbd>{' '}
+              for shortcuts
+            </p>
+          </div>
+        </div>
+      )}
+
       <LiveCursors cursors={cursors} currentUserId={identity.userId} stageScale={stageScale} stagePos={stagePos} />
 
       {selBox && selectedIds.length > 0 && (
@@ -489,34 +580,58 @@ const Canvas = forwardRef(function Canvas(props, ref) {
         />
       )}
 
-      {textEditor && (
-        <textarea
-          autoFocus
-          value={textEditor.value}
-          onChange={(e) => setTextEditor((prev) => ({ ...prev, value: e.target.value }))}
-          onBlur={commitText}
-          onKeyDown={(e) => {
-            if (e.key === 'Escape') { e.preventDefault(); commitText(); }
-            if (e.key === 'Enter' && !e.shiftKey && !textEditor.isSticky) { e.preventDefault(); commitText(); }
-          }}
-          className="absolute z-30 outline-none resize-none border border-indigo-400 bg-transparent p-1"
-          style={{
-            left: textEditor.x * stageScale + stagePos.x,
-            top: textEditor.y * stageScale + stagePos.y,
-            color: textEditor.isSticky ? '#1a1a2e' : strokeColor,
-            background: textEditor.isSticky ? stickyColor : 'transparent',
-            fontSize: (textEditor.fontSize || fontSize) * stageScale,
-            fontWeight: fontStyle.includes('bold') ? 'bold' : 'normal',
-            fontStyle: fontStyle.includes('italic') ? 'italic' : 'normal',
-            width: textEditor.isSticky ? 200 * stageScale : 220,
-            height: textEditor.isSticky ? 150 * stageScale : 'auto',
-            minHeight: 32,
-            lineHeight: 1.3,
-            borderRadius: textEditor.isSticky ? 10 : 2,
-          }}
-          placeholder="Type…"
-        />
-      )}
+      {textEditor && (() => {
+        const m = textMetrics(textEditor.isSticky);
+        const size = textEditor.fontSize || fontSize;
+        return (
+          <textarea
+            ref={textareaRef}
+            value={textEditor.value}
+            onChange={(e) => setTextEditor((prev) => ({ ...prev, value: e.target.value }))}
+            onBlur={() => {
+              // Ignore the spurious blur that can fire in the same tick the
+              // editor opened; a real click-away always comes later.
+              if (Date.now() - openedAt.current < 250) {
+                requestAnimationFrame(() => textareaRef.current?.focus({ preventScroll: true }));
+                return;
+              }
+              commitText();
+            }}
+            onKeyDown={(e) => {
+              // Enter makes a new line. Escape, Ctrl/Cmd+Enter or clicking away
+              // finishes editing — the same convention Excalidraw uses.
+              e.stopPropagation();
+              if (e.key === 'Escape') { e.preventDefault(); cancelText(); }
+              if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); commitText(); }
+            }}
+            onWheel={(e) => e.stopPropagation()}
+            spellCheck={false}
+            className="absolute z-30 outline-none resize-none overflow-hidden"
+            style={{
+              left: (textEditor.x - m.padding) * stageScale + stagePos.x,
+              top: (textEditor.y - m.padding) * stageScale + stagePos.y,
+              width: m.width * stageScale,
+              minHeight: (size * TEXT_LINE_HEIGHT + m.padding * 2) * stageScale,
+              height: textEditor.isSticky ? STICKY_HEIGHT * stageScale : 'auto',
+              padding: m.padding * stageScale,
+              color: textEditor.isSticky ? STICKY_TEXT_COLOR : textEditor.color,
+              background: textEditor.isSticky ? textEditor.fillColor : 'transparent',
+              caretColor: textEditor.isSticky ? STICKY_TEXT_COLOR : textEditor.color,
+              fontFamily: BOARD_FONT,
+              fontSize: size * stageScale,
+              fontWeight: textEditor.fontStyle.includes('bold') ? 'bold' : 'normal',
+              fontStyle: textEditor.fontStyle.includes('italic') ? 'italic' : 'normal',
+              lineHeight: TEXT_LINE_HEIGHT,
+              border: `1px dashed ${textEditor.isSticky ? 'rgba(0,0,0,.35)' : 'rgba(129,140,248,.9)'}`,
+              borderRadius: textEditor.isSticky ? 10 : 4,
+              boxSizing: 'border-box',
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-word',
+            }}
+            placeholder="Type…  (Esc or click away when done)"
+          />
+        );
+      })()}
 
       <Minimap shapes={shapes} stagePos={stagePos} stageScale={stageScale} viewWidth={view.width} viewHeight={view.height} />
     </div>

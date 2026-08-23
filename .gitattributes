@@ -1,0 +1,23 @@
+# Normalise line endings so the repo behaves the same on Windows, macOS, Linux
+# and in CI. Without this, files committed from Windows carry CRLF and shell
+# scripts fail on Linux with "bad interpreter: no such file or directory".
+* text=auto eol=lf
+
+# Must stay LF — these are executed by a Unix shell.
+mvnw text eol=lf
+*.sh text eol=lf
+
+# Must stay CRLF — these are executed by Windows cmd.exe.
+mvnw.cmd text eol=crlf
+*.cmd text eol=crlf
+*.bat text eol=crlf
+
+# Binary: never touch.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.jar binary
+*.woff binary
+*.woff2 binary

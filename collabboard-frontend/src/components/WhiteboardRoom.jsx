@@ -11,6 +11,7 @@ import Toolbar from './Toolbar.jsx';
 import Canvas from './Canvas.jsx';
 import SettingsPanel from './SettingsPanel.jsx';
 import ShortcutsModal from './ShortcutsModal.jsx';
+import ShareDialog from './ShareDialog.jsx';
 
 const CURSOR_THROTTLE_MS = 30;
 const TOOL_KEYS = {
@@ -54,6 +55,7 @@ export default function WhiteboardRoom() {
 
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
   const [zoomPercent, setZoomPercent] = useState(100);
 
   const canvasRef = useRef(null);
@@ -150,6 +152,14 @@ export default function WhiteboardRoom() {
 
   const handleDrawEvent = useCallback((event) => {
     if (!event) return;
+
+    if (event.type === 'rename') {
+      // Applied even for our own echo so every client converges on the
+      // server-normalised (trimmed / truncated) name.
+      setBoardName(event.boardName || 'Untitled Board');
+      return;
+    }
+
     if (event.userId === identity.userId && event.type !== 'cursor' && event.type !== 'laser') return;
 
     if (event.type === 'cursor') {
@@ -256,8 +266,14 @@ export default function WhiteboardRoom() {
 
   const handleRename = useCallback((name) => {
     setBoardName(name);
-    updateBoardName(roomCode, name).catch(() => showToast('Failed to save name', 'error'));
-  }, [roomCode, showToast]);
+    // The WebSocket route both persists the name and broadcasts it to peers.
+    // If the socket is down, fall back to the REST endpoint so the rename is
+    // not lost — peers will pick it up on their next load.
+    const sent = sendDrawEvent({ type: 'rename', userId: identity.userId, boardName: name });
+    if (!sent) {
+      updateBoardName(roomCode, name).catch(() => showToast('Failed to save name', 'error'));
+    }
+  }, [roomCode, showToast, sendDrawEvent, identity]);
 
   const handleExport = useCallback(async (kind) => {
     if (!canvasRef.current) return;
@@ -338,6 +354,7 @@ export default function WhiteboardRoom() {
         roomCode={roomCode}
         boardName={boardName}
         onRenameBoard={handleRename}
+        onShare={() => setShareOpen(true)}
         connectedUsers={connectedUsers}
         currentUserId={identity.userId}
         zoomPercent={zoomPercent}
@@ -417,6 +434,8 @@ export default function WhiteboardRoom() {
       />
 
       <ShortcutsModal open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
+
+      <ShareDialog open={shareOpen} onClose={() => setShareOpen(false)} roomCode={roomCode} />
     </div>
   );
 }

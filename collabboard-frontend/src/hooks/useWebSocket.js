@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { Client } from '@stomp/stompjs';
 import SockJS from 'sockjs-client';
-
-const WS_URL = import.meta.env.VITE_WS_URL || 'http://localhost:8080/ws';
+import { WS_URL } from '../config.js';
 
 // Connection status: 'connecting' | 'connected' | 'reconnecting' | 'disconnected'
 export default function useWebSocket({
@@ -111,6 +110,8 @@ export default function useWebSocket({
     };
   }, [roomCode, identity, updateStatus]);
 
+  // Returns true when the event was actually published, so callers can fall
+  // back to the REST API while the socket is down.
   const sendDrawEvent = useCallback(
     (event) => {
       const client = stompClient.current;
@@ -119,7 +120,9 @@ export default function useWebSocket({
           destination: `/app/room/${roomCode}/draw`,
           body: JSON.stringify(event),
         });
+        return true;
       }
+      return false;
     },
     [roomCode]
   );

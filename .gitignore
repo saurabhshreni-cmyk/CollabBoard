@@ -5,6 +5,9 @@
 **/.env
 **/coverage/
 
+# Local run output (start-collabboard.cmd writes here)
+logs/
+
 # OS / IDE
 .DS_Store
 Thumbs.db

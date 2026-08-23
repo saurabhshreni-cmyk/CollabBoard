@@ -107,6 +107,34 @@ class RoomServiceTest {
         assertThat(roomService.updateBoardName(code, longName).getBoardName()).hasSize(100);
     }
 
+    @Test
+    void renameEventPersistsTheNameAndLeavesTheSnapshotAlone() {
+        String code = roomService.createRoom().getRoomCode();
+        roomService.updateSnapshot(code, drawEvent("s1", "pen"));
+
+        DrawEventDto rename = new DrawEventDto();
+        rename.setType("rename");
+        rename.setUserId("u1");
+        rename.setBoardName("  Sprint Retro  ");
+
+        Room room = roomService.updateSnapshot(code, rename);
+
+        assertThat(room.getBoardName()).isEqualTo("Sprint Retro");
+        assertThat(parse(room.getBoardSnapshot())).hasSize(1);
+        assertThat(roomService.getRoom(code).getBoardName()).isEqualTo("Sprint Retro");
+    }
+
+    @Test
+    void renameEventWithoutANameFallsBackToTheDefault() {
+        String code = roomService.createRoom().getRoomCode();
+        roomService.updateBoardName(code, "Something");
+
+        DrawEventDto rename = new DrawEventDto();
+        rename.setType("rename");
+
+        assertThat(roomService.updateSnapshot(code, rename).getBoardName()).isEqualTo("Untitled Board");
+    }
+
     // ---------- snapshot mutations ----------
 
     @Test

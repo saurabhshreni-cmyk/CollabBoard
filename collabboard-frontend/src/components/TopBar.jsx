@@ -8,7 +8,7 @@ const STATUS_META = {
 };
 
 export default function TopBar({
-  roomCode, boardName, onRenameBoard,
+  roomCode, boardName, onRenameBoard, onShare,
   connectedUsers = [], currentUserId,
   zoomPercent, onZoomIn, onZoomOut, onResetZoom,
   onUndo, onRedo, canUndo, canRedo,
@@ -72,8 +72,13 @@ export default function TopBar({
 
       <div className="flex-1 flex items-center justify-center gap-2 min-w-0">
         <span className="bg-gray-800 text-white rounded px-2 py-1 font-mono text-sm tracking-widest">{roomCode}</span>
-        <button type="button" onClick={handleCopy} className="text-xs bg-gray-800 hover:bg-gray-700 text-gray-200 rounded px-2 py-1">
-          {copied ? 'Copied!' : 'Copy Link'}
+        <button
+          type="button"
+          onClick={onShare || handleCopy}
+          title="Invite someone to this board"
+          className="text-xs bg-indigo-600 hover:bg-indigo-500 text-white font-medium rounded px-2.5 py-1"
+        >
+          {onShare ? 'Share' : (copied ? 'Copied!' : 'Copy Link')}
         </button>
         {editingName ? (
           <input

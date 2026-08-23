@@ -27,4 +27,5 @@ public class HealthController {
         body.put("roomCount", roomService.countRooms());
         return body;
     }
+
 }

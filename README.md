@@ -77,14 +77,48 @@ CollabBoard/
 
 ## ✅ Prerequisites (non-Docker setup)
 
-- **Java 17** (`java -version`)
-- **Maven 3.8+** (`mvn -version`)
+- **Java 17+** (`java -version`)
 - **Node.js 18+** and npm (`node -v`)
-- **PostgreSQL 14+** running locally
+- **PostgreSQL 14+** running locally — *not needed for the quick start below*
+
+Maven is **not** required: the repo ships the Maven wrapper (`mvnw` / `mvnw.cmd`),
+which downloads the pinned Maven version on first use.
 
 ---
 
-## 🚀 Local Setup
+## ⚡ Quick start (no database setup)
+
+The `dev` profile runs the backend against an in-memory H2 database, so you can
+be drawing in about a minute with nothing else installed.
+
+```bash
+# Terminal 1 — backend on :8080
+cd collabboard-backend
+./mvnw spring-boot:run -Dspring-boot.run.profiles=dev   # Windows: .\mvnw.cmd
+
+# Terminal 2 — frontend on :5173
+cd collabboard-frontend
+npm ci
+npm run dev
+```
+
+Open **http://localhost:5173**. Boards live in memory and reset when the backend
+stops; the H2 console is at `http://localhost:8080/h2-console` (JDBC URL
+`jdbc:h2:mem:collabboard`, user `sa`, no password). For persistence across
+restarts, use the PostgreSQL setup below instead.
+
+On Windows you can just double-click **`start-collabboard.cmd`**, which does all
+of the above and opens the browser. **`stop-collabboard.cmd`** shuts it down.
+
+### Sharing the board
+
+`localhost` links only work on your own machine. Click **Share** in the top bar —
+it detects this and offers your LAN address instead, so anyone on the same WiFi
+can join. For a permanent public link, see **[DEPLOY.md](DEPLOY.md)**.
+
+---
+
+## 🚀 Local Setup (PostgreSQL)
 
 ### 1. Create the database
 
@@ -103,7 +137,7 @@ export DB_URL=jdbc:postgresql://localhost:5432/collabboard
 export DB_USERNAME=postgres
 export DB_PASSWORD=yourpassword
 export CORS_ALLOWED_ORIGINS=http://localhost:5173
-mvn spring-boot:run
+./mvnw spring-boot:run
 ```
 
 The API starts on `http://localhost:8080`. Tables are auto-created by Hibernate (`ddl-auto=update`).
@@ -128,7 +162,7 @@ Visit **http://localhost:5173**, create a room, copy the link, and open it in a 
 
 ```bash
 # Backend — JUnit 5 against an in-memory H2 database
-cd collabboard-backend && mvn test
+cd collabboard-backend && ./mvnw test
 
 # Frontend — Vitest (jsdom)
 cd collabboard-frontend && npm test
@@ -167,21 +201,23 @@ Both suites also run in GitHub Actions on every push and pull request (`.github/
 | -------- | ----------------------------- | ---------------------------------------------------- |
 | `POST`   | `/api/rooms`                  | Create a room → `201` with a 6-character code        |
 | `GET`    | `/api/rooms/{code}`           | Fetch a room + its board snapshot (`404` if unknown) |
-| `PUT`    | `/api/rooms/{code}/name`      | Rename the board — body `{"boardName": "..."}`       |
+| `PUT`    | `/api/rooms/{code}/name`      | Rename the board — body `{"boardName": "..."}` (offline fallback for the `rename` STOMP event) |
 | `DELETE` | `/api/rooms/{code}/clear`     | Reset the board snapshot to `[]`                     |
 | `GET`    | `/api/rooms/{code}/users`     | Current presence roster for the room                 |
 | `GET`    | `/api/health`                 | `{status, timestamp, roomCount}`                     |
+| `GET`    | `/api/network`                | `{addresses}` — host LAN IPs for the share dialog (**`dev` profile only**) |
 
 ### WebSocket (STOMP over SockJS at `/ws`)
 
 | Direction | Destination                   | Payload                                                                       |
 | --------- | ----------------------------- | ----------------------------------------------------------------------------- |
-| send      | `/app/room/{code}/draw`       | Draw event (`draw`, `update`, `delete`, `replace`, `clear`, `cursor`, `laser`) |
+| send      | `/app/room/{code}/draw`       | Draw event (`draw`, `update`, `delete`, `replace`, `clear`, `rename`, `cursor`, `laser`) |
 | send      | `/app/room/{code}/presence`   | `{type: "join" \| "leave", userId, userName, userColor}`                       |
 | subscribe | `/topic/room/{code}`          | Every draw event broadcast to the room                                        |
 | subscribe | `/topic/room/{code}/presence` | The room's user roster whenever it changes                                    |
 
 Board-altering event types are persisted to the room snapshot; `cursor`, `laser`, `join`, and `leave` are relayed only.
+`rename` updates the board's name rather than its snapshot, and the server echoes the normalised (trimmed, ≤100 char) name back to every subscriber so all clients agree.
 
 ---
 
@@ -239,7 +275,7 @@ Board-altering event types are persisted to the room snapshot; `cursor`, `laser`
 
 1. Fork the repo and create a feature branch: `git checkout -b feature/my-feature`.
 2. Commit your changes with clear messages.
-3. Run `mvn test` and `npm test`, then verify real-time sync locally with two browser tabs.
+3. Run `./mvnw test` and `npm test`, then verify real-time sync locally with two browser tabs.
 4. Open a pull request describing what changed and why.
 
 Issues and suggestions are welcome — please include reproduction steps for bugs.

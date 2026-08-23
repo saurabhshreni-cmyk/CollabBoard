@@ -1,5 +1,9 @@
 import { Group, Rect, Ellipse, Line, Text, Arrow, Path } from 'react-konva';
 import { freehandPath } from '../utils/drawingUtils.js';
+import {
+  BOARD_FONT, TEXT_LINE_HEIGHT, textMetrics,
+  STICKY_WIDTH, STICKY_HEIGHT, STICKY_PADDING, STICKY_FONT_SIZE, STICKY_TEXT_COLOR,
+} from '../utils/textConfig.js';
 
 /**
  * Renders a single board shape and wires up selection / drag / transform.
@@ -178,10 +182,13 @@ export default function ShapeNode({
         >
           <Text
             text={shape.text || ''}
+            width={textMetrics(false).wrapWidth}
+            fontFamily={BOARD_FONT}
             fontSize={shape.fontSize || 24}
             fontStyle={shape.fontStyle || 'normal'}
             fill={stroke}
-            lineHeight={1.2}
+            lineHeight={TEXT_LINE_HEIGHT}
+            wrap="word"
           />
         </Group>
       );
@@ -194,8 +201,8 @@ export default function ShapeNode({
           onDblTap={() => onEditText && onEditText(shape)}
         >
           <Rect
-            width={w || 200}
-            height={h || 150}
+            width={w || STICKY_WIDTH}
+            height={h || STICKY_HEIGHT}
             fill={shape.fillColor || '#FFEAA7'}
             cornerRadius={10}
             shadowColor="#000000"
@@ -206,14 +213,15 @@ export default function ShapeNode({
           />
           <Text
             text={shape.text || ''}
-            x={14}
-            y={14}
-            width={(w || 200) - 28}
-            height={(h || 150) - 28}
-            fontSize={shape.fontSize || 18}
+            x={STICKY_PADDING}
+            y={STICKY_PADDING}
+            width={(w || STICKY_WIDTH) - STICKY_PADDING * 2}
+            height={(h || STICKY_HEIGHT) - STICKY_PADDING * 2}
+            fontFamily={BOARD_FONT}
+            fontSize={shape.fontSize || STICKY_FONT_SIZE}
             fontStyle={shape.fontStyle || 'normal'}
-            fill="#1a1a2e"
-            lineHeight={1.3}
+            fill={STICKY_TEXT_COLOR}
+            lineHeight={TEXT_LINE_HEIGHT}
             wrap="word"
           />
         </Group>

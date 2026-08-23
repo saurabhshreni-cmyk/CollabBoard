@@ -17,6 +17,9 @@ export default defineConfig({
   },
   server: {
     port: 5173,
+    // Listen on every interface so other devices on the same network can open
+    // the board at http://<your-ip>:5173.
+    host: true,
     proxy: {
       '/api': {
         target: 'http://localhost:8080',

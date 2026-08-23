@@ -2,6 +2,7 @@ package com.collabboard.controller;
 
 import com.collabboard.dto.DrawEventDto;
 import com.collabboard.dto.ShapeDto;
+import com.collabboard.model.Room;
 import com.collabboard.service.PresenceService;
 import com.collabboard.service.RoomService;
 import org.junit.jupiter.api.BeforeEach;
@@ -15,6 +16,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 class WhiteboardControllerTest {
 
@@ -43,6 +45,23 @@ class WhiteboardControllerTest {
 
         verify(roomService).updateSnapshot("ROOM01", event);
         assertThat(relayed).isSameAs(event);
+    }
+
+    @Test
+    void renameIsPersistedAndRelayedWithTheNormalisedName() {
+        DrawEventDto event = new DrawEventDto();
+        event.setType("rename");
+        event.setUserId("u1");
+        event.setBoardName("  Sprint Planning  ");
+
+        Room saved = Room.builder().roomCode("ROOM01").boardName("Sprint Planning").build();
+        when(roomService.updateSnapshot("ROOM01", event)).thenReturn(saved);
+
+        DrawEventDto relayed = controller.receiveDrawEvent("ROOM01", event);
+
+        verify(roomService).updateSnapshot("ROOM01", event);
+        assertThat(relayed).isSameAs(event);
+        assertThat(relayed.getBoardName()).isEqualTo("Sprint Planning");
     }
 
     @Test

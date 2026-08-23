@@ -24,6 +24,7 @@ public class RoomService {
 
     private static final String CODE_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
     private static final int CODE_LENGTH = 6;
+    private static final int MAX_BOARD_NAME_LENGTH = 100;
     private static final SecureRandom RANDOM = new SecureRandom();
 
     private final RoomRepository roomRepository;
@@ -65,13 +66,21 @@ public class RoomService {
     @Transactional
     public Room updateBoardName(String roomCode, String boardName) {
         Room room = getRoom(roomCode);
-        String name = (boardName == null || boardName.isBlank()) ? "Untitled Board" : boardName.trim();
-        if (name.length() > 100) {
-            name = name.substring(0, 100);
-        }
-        room.setBoardName(name);
+        room.setBoardName(normalizeBoardName(boardName));
         room.setLastActivityAt(LocalDateTime.now());
         return roomRepository.save(room);
+    }
+
+    /**
+     * Trims, defaults and truncates a user-supplied board name so REST and
+     * WebSocket renames always agree on the stored value.
+     */
+    static String normalizeBoardName(String boardName) {
+        if (boardName == null || boardName.isBlank()) {
+            return "Untitled Board";
+        }
+        String name = boardName.trim();
+        return name.length() > MAX_BOARD_NAME_LENGTH ? name.substring(0, MAX_BOARD_NAME_LENGTH) : name;
     }
 
     @Transactional
@@ -98,6 +107,12 @@ public class RoomService {
         List<Map<String, Object>> shapes = parseSnapshot(room.getBoardSnapshot());
 
         switch (type) {
+            case "rename" -> {
+                // Board metadata only: the shape snapshot is untouched.
+                room.setBoardName(normalizeBoardName(event.getBoardName()));
+                room.setLastActivityAt(LocalDateTime.now());
+                return roomRepository.save(room);
+            }
             case "clear" -> shapes = new ArrayList<>();
             case "replace", "undo", "redo" -> {
                 if (event.getShapes() != null) {

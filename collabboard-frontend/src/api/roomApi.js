@@ -1,9 +1,8 @@
 import axios from 'axios';
-
-const baseURL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
+import { API_BASE_URL } from '../config.js';
 
 const api = axios.create({
-  baseURL,
+  baseURL: API_BASE_URL,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -50,6 +49,16 @@ export async function updateBoardName(roomCode, boardName) {
 export async function getHealth() {
   const response = await api.get('/api/health');
   return response.data;
+}
+
+/** LAN addresses the backend is reachable on — used by the share dialog. */
+export async function getNetworkAddresses() {
+  try {
+    const response = await api.get('/api/network');
+    return response.data?.addresses || [];
+  } catch {
+    return [];
+  }
 }
 
 export default api;

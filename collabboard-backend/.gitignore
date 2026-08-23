@@ -4,6 +4,10 @@ target/
 .idea/
 *.iml
 .DS_Store
-.mvn/
-!.mvn/wrapper/maven-wrapper.jar
+# Keep the Maven wrapper config — mvnw is useless without it. The wrapper uses
+# distributionType=only-script, so there is no maven-wrapper.jar to commit.
+.mvn/*
+!.mvn/wrapper/
+.mvn/wrapper/*
+!.mvn/wrapper/maven-wrapper.properties
 *.log

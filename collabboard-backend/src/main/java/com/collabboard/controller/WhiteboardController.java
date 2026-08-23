@@ -2,6 +2,7 @@ package com.collabboard.controller;
 
 import com.collabboard.dto.DrawEventDto;
 import com.collabboard.dto.UserPresenceDto;
+import com.collabboard.model.Room;
 import com.collabboard.service.PresenceService;
 import com.collabboard.service.RoomService;
 import org.springframework.messaging.handler.annotation.DestinationVariable;
@@ -16,7 +17,7 @@ import java.util.Set;
 public class WhiteboardController {
 
     private static final Set<String> PERSISTED_TYPES = Set.of(
-            "draw", "erase", "update", "delete", "replace", "clear", "undo", "redo");
+            "draw", "erase", "update", "delete", "replace", "clear", "undo", "redo", "rename");
 
     private final RoomService roomService;
     private final PresenceService presenceService;
@@ -30,7 +31,12 @@ public class WhiteboardController {
     @SendTo("/topic/room/{roomCode}")
     public DrawEventDto receiveDrawEvent(@DestinationVariable String roomCode, DrawEventDto event) {
         if (event != null && event.getType() != null && PERSISTED_TYPES.contains(event.getType())) {
-            roomService.updateSnapshot(roomCode, event);
+            Room room = roomService.updateSnapshot(roomCode, event);
+            if ("rename".equals(event.getType())) {
+                // Echo back the normalised (trimmed / defaulted / truncated) name
+                // so every client shows exactly what was persisted.
+                event.setBoardName(room.getBoardName());
+            }
         }
         // cursor / laser are simply relayed to all subscribers.
         return event;

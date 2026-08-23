@@ -60,10 +60,12 @@
             <scope>test</scope>
         </dependency>
 
+        <!-- Backs both the test profile and the `dev` profile, which lets the
+             app run locally without a PostgreSQL install. -->
         <dependency>
             <groupId>com.h2database</groupId>
             <artifactId>h2</artifactId>
-            <scope>test</scope>
+            <scope>runtime</scope>
         </dependency>
     </dependencies>
 

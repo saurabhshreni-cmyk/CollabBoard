@@ -4,9 +4,12 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --no-audit --no-fund
 COPY . .
-# Vite reads VITE_* at build time; override with --build-arg if needed.
-ARG VITE_API_BASE_URL=http://localhost:8080
-ARG VITE_WS_URL=http://localhost:8080/ws
+# Vite reads VITE_* at build time. Left empty on purpose: src/config.js then
+# derives the backend from whatever address the page was opened on, so the same
+# image works via localhost and via a LAN IP. Set these with --build-arg only
+# when the API lives on a different host (e.g. a real deployment).
+ARG VITE_API_BASE_URL=""
+ARG VITE_WS_URL=""
 ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
 ENV VITE_WS_URL=$VITE_WS_URL
 RUN npm run build
