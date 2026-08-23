@@ -14,10 +14,10 @@ jobs:
       run:
         working-directory: collabboard-backend
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           java-version: '17'
           distribution: temurin
@@ -30,7 +30,7 @@ jobs:
         run: mvn -B package -DskipTests
 
       - name: Upload jar
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: collabboard-backend-jar
           path: collabboard-backend/target/*.jar
@@ -43,10 +43,10 @@ jobs:
       run:
         working-directory: collabboard-frontend
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up Node 20
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: '20'
           cache: npm
@@ -62,7 +62,7 @@ jobs:
         run: npm run build
 
       - name: Upload build output
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: collabboard-frontend-dist
           path: collabboard-frontend/dist
@@ -72,7 +72,7 @@ jobs:
     name: Docker images build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Build backend image
         run: docker build -t collabboard-backend:ci ./collabboard-backend
