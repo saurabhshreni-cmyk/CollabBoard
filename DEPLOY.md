@@ -65,7 +65,7 @@ the tests and builds the Docker images on every push.
 4. Wait for the first build (~5–8 minutes — it builds the web page and the
    server inside Docker).
 5. When it's live, open the URL Render shows. It looks like
-   `https://collabboard-xxxx.onrender.com`.
+   `https://collabboard-xxxx.onrender.com` (this project runs at https://collabboard-3vp6.onrender.com).
 
 That's it. There are no environment variables to set:
 

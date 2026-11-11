@@ -2,6 +2,10 @@
 
 [![CI](https://github.com/saurabhshreni-cmyk/CollabBoard/actions/workflows/ci.yml/badge.svg)](https://github.com/saurabhshreni-cmyk/CollabBoard/actions/workflows/ci.yml) ![Java](https://img.shields.io/badge/Java-17-orange) ![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.5-brightgreen) ![React](https://img.shields.io/badge/React-18-blue) ![Vite](https://img.shields.io/badge/Vite-8-purple) ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-blue)
 
+### 🔗 Live demo: **[collabboard-3vp6.onrender.com](https://collabboard-3vp6.onrender.com)**
+
+> Hosted on a free plan, so the first visit after a quiet spell takes up to a minute while the server wakes up.
+
 A full-stack, real-time collaborative whiteboard. Create a room, share the link, and draw together live on an infinite canvas — freehand pen, highlighter, laser pointer, shapes, arrows, text, sticky notes, emoji stamps, live cursors, undo/redo, and image export. Boards persist to PostgreSQL, so anyone joining later sees the current state.
 
 See [FEATURES.md](FEATURES.md) for the complete feature list.
