@@ -5,14 +5,12 @@ This guide gets you a permanent `https://` link anyone can open.
 
 Everything below uses **free tiers** — no card required.
 
-There are two options. Pick based on who needs access.
-
 | | Same WiFi only | Anyone, anywhere |
 |---|---|---|
-| Setup time | none — already works | ~30 minutes, once |
-| Link | `http://192.168.x.x:5173` | `https://your-board.vercel.app` |
+| Setup time | none — already works | ~10 minutes, once |
+| Link | `http://192.168.x.x:5173` | `https://collabboard-xxxx.onrender.com` |
 | Needs your laptop on | yes | no |
-| Steps | [below](#option-a--share-over-your-wifi) | [below](#option-b--deploy-it-publicly) |
+| Steps | [Option A](#option-a--share-over-your-wifi) | [Option B](#option-b--deploy-it-publicly) |
 
 ---
 
@@ -38,17 +36,15 @@ New-NetFirewallRule -DisplayName "CollabBoard" -Direction Inbound -LocalPort 517
 
 ## Option B — Deploy it publicly
 
-Three pieces: a database and backend on **Render**, the frontend on **Vercel**.
+The whole app — web page, API and database — deploys to **Render** as one
+service from one file (`render.yaml`). The server serves the web page itself,
+so there is a single URL and nothing to wire together.
 
-### Step 1 — Push to GitHub ✅ done
+### Step 1 — Push to GitHub
 
-The repository is live at
-**https://github.com/saurabhshreni-cmyk/CollabBoard** on the `main` branch, and
-the CI workflow (backend tests, frontend tests, Docker image builds) runs green
-on every push. Render and Vercel both deploy straight from that repo, so there
-is nothing to do here — just keep pushing to `main`.
-
-To push future changes:
+Render deploys from the GitHub repository
+(**https://github.com/saurabhshreni-cmyk/CollabBoard**), so the code has to be
+there first:
 
 ```bash
 git add .
@@ -57,74 +53,106 @@ git push
 ```
 
 `.gitignore` already excludes `node_modules/`, `target/`, `logs/` and any `.env`
-file, so no secrets or build output get committed.
+file, so no secrets or build output get committed. The CI workflow then runs
+the tests and builds the Docker images on every push.
 
-### Step 2 — Backend + database on Render
+### Step 2 — Create the app on Render
 
 1. Sign up at [render.com](https://render.com) with your GitHub account.
-2. **New +** → **Blueprint** → pick your `collabboard` repo.
-3. Render reads `render.yaml` and offers to create **collabboard-db** and
-   **collabboard-backend**. Click **Apply**.
+2. **New +** → **Blueprint** → pick the `CollabBoard` repo.
+3. Render reads `render.yaml` and offers to create **collabboard-db** (the
+   database) and **collabboard** (the app). Click **Apply**.
+4. Wait for the first build (~5–8 minutes — it builds the web page and the
+   server inside Docker).
+5. When it's live, open the URL Render shows. It looks like
+   `https://collabboard-xxxx.onrender.com`.
 
-   The database connection is wired up for you: Render injects `DATABASE_URL`
-   in `postgresql://…` form, and the app converts it to the `jdbc:postgresql://…`
-   form Spring needs at startup. You don't set any DB variables by hand.
-4. Wait for the first build (~5 minutes — it compiles the jar in Docker).
-5. When it's live, copy the URL. It looks like
-   `https://collabboard-backend.onrender.com`.
-6. Check it works: open `<that url>/api/health` — you should see
-   `{"status":"UP",...}`.
+That's it. There are no environment variables to set:
 
-> **Free tier caveat:** the backend sleeps after 15 minutes of inactivity, so
-> the first visit after a quiet spell takes ~30 seconds to wake. Free Render
-> databases are also deleted about 30 days after creation.
+- The database connection is wired up for you. Render injects `DATABASE_URL`
+  in `postgresql://…` form and the app converts it at startup.
+- The server only accepts requests from its own public address, which Render
+  tells it automatically.
 
-### Step 3 — Frontend on Vercel
+### Step 3 — Confirm it works
 
-1. Sign up at [vercel.com](https://vercel.com) with GitHub.
-2. **Add New** → **Project** → pick the same repo.
-3. Set **Root Directory** to `collabboard-frontend`. Vercel detects Vite from
-   `vercel.json`; leave the build settings alone.
-4. Add two **Environment Variables**, using your Render URL from step 2:
+1. Open `<your url>/api/health` — you should see `{"status":"UP",...}`.
+2. Open your URL, create a board, and open the link on a phone using mobile
+   data (not WiFi). You should see both cursors moving live.
+
+> **Free tier caveats**
+> - The app sleeps after 15 minutes without visitors, so the first visit after a
+>   quiet spell takes ~30–60 seconds. The page says "the server is waking up"
+>   while it waits.
+> - Free Render databases are deleted about 30 days after creation. See
+>   [Keeping your boards longer](#keeping-your-boards-longer).
+
+---
+
+## Optional settings
+
+Set these on the Render service under **Environment** if you want them:
+
+| Name | What it does | Default |
+| ---- | ------------ | ------- |
+| `ROOM_RETENTION_DAYS` | Deletes boards nobody has touched for this many days, which keeps a small database from filling up. `0` keeps everything. | `0` |
+| `ROOM_CREATIONS_PER_MINUTE` | How many boards one address may create per minute. | `20` |
+| `DB_POOL_SIZE` | Maximum database connections. Free databases allow few. | `5` |
+| `CORS_ALLOWED_ORIGINS` | Other websites allowed to use this server. Only needed if you host the web page separately (below). | the app's own URL |
+
+## Keeping your boards longer
+
+The app works with any PostgreSQL database, so you are not tied to Render's
+30-day free one. Create a free database at a provider that does not expire it
+(for example [Neon](https://neon.tech) or [Supabase](https://supabase.com)),
+copy its connection string (`postgresql://user:password@host/dbname?sslmode=require`),
+and on Render set the service's `DATABASE_URL` to that string in place of the
+linked database. Boards in the old database are not copied across.
+
+## Alternative: web page on Vercel, server on Render
+
+You only need this if you specifically want the web page on Vercel's network.
+It is more to set up, because the two halves live at different addresses.
+
+1. Deploy the server to Render as above.
+2. On [vercel.com](https://vercel.com): **Add New** → **Project** → pick the
+   repo, set **Root Directory** to `collabboard-frontend`, and add two
+   environment variables using your Render URL:
 
    | Name | Value |
    | ---- | ----- |
-   | `VITE_API_BASE_URL` | `https://collabboard-backend.onrender.com` |
-   | `VITE_WS_URL` | `https://collabboard-backend.onrender.com/ws` |
+   | `VITE_API_BASE_URL` | `https://collabboard-xxxx.onrender.com` |
+   | `VITE_WS_URL` | `https://collabboard-xxxx.onrender.com/ws` |
 
-5. **Deploy**. You'll get a URL like `https://collabboard.vercel.app`.
+3. **Deploy**, then on Render set `CORS_ALLOWED_ORIGINS` to your exact Vercel
+   URL (for example `https://collabboard.vercel.app`, no trailing slash).
 
-### Step 4 — Let the backend trust the frontend
-
-Back in Render → **collabboard-backend** → **Environment**:
-
-- Set `CORS_ALLOWED_ORIGINS` to your exact Vercel URL, e.g.
-  `https://collabboard.vercel.app` (no trailing slash).
-- Save. Render redeploys automatically.
-
-This applies to both the REST API and the WebSocket handshake.
-
-### Step 5 — Confirm it works
-
-Open your Vercel URL, create a board, and paste the link into a phone on mobile
-data (not WiFi). You should see both cursors moving live.
+Vite bakes `VITE_*` values in at build time — after changing them you must
+**redeploy** the Vercel project, not just save.
 
 ---
 
 ## Troubleshooting
 
-**Board loads but stays "Connecting…"**
-The WebSocket is blocked. Check `CORS_ALLOWED_ORIGINS` on Render exactly matches
-your Vercel origin, and that `VITE_WS_URL` ends in `/ws`.
+**The build fails on Render**
+Open the service's **Logs** tab; the failing step is near the end. The same
+build runs in GitHub Actions on every push, so a red ✗ there shows the problem
+before Render does.
 
-**"Failed to load room" / network errors in the console**
-`VITE_API_BASE_URL` is wrong or the backend is asleep. Open
-`<backend>/api/health` directly and wait for it to wake.
+**The page loads but stays "Connecting…"**
+The live connection is being blocked. If you set `CORS_ALLOWED_ORIGINS`
+yourself, it must exactly match the address in your browser's address bar
+(including `https://`, without a trailing slash). If you did not set it, remove
+any value and redeploy.
 
-**Changes to environment variables did nothing**
-Vite bakes `VITE_*` values in at build time — you must **redeploy** the Vercel
-project after changing them, not just save.
+**"Failed to load the room" or "Could not reach the server"**
+The server is probably asleep. Open `<your url>/api/health` and wait for it to
+answer, then reload.
+
+**"Too many rooms created"**
+The server limits board creation to 20 per minute per address. Wait a minute,
+or raise `ROOM_CREATIONS_PER_MINUTE`.
 
 **Everything worked, then broke a month later**
-The free Render database expired. Create a new one and update the backend's
-`DB_*` variables.
+The free Render database expired. Create a new database and point
+`DATABASE_URL` at it (see [Keeping your boards longer](#keeping-your-boards-longer)).

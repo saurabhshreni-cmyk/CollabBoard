@@ -1,42 +1,52 @@
 package com.collabboard.service;
 
-import com.collabboard.model.Room;
 import com.collabboard.repository.RoomRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
-import java.util.List;
 
 /**
- * Logs (does not delete) rooms that have been inactive for more than 7 days.
- * Runs at the top of every hour.
+ * Hourly housekeeping for abandoned boards.
+ * <p>
+ * Deletion is opt-in: with {@code ROOM_RETENTION_DAYS} unset (or 0) idle rooms
+ * are only counted in the log. Set it to a positive number of days to have
+ * rooms with no activity for that long removed, which keeps a small free-tier
+ * database from filling up.
  */
 @Component
 public class RoomCleanupTask {
 
     private static final Logger log = LoggerFactory.getLogger(RoomCleanupTask.class);
-    private static final int INACTIVE_DAYS = 7;
+    private static final int REPORT_AFTER_DAYS = 7;
 
     private final RoomRepository roomRepository;
+    private final int retentionDays;
 
-    public RoomCleanupTask(RoomRepository roomRepository) {
+    public RoomCleanupTask(RoomRepository roomRepository,
+                           @Value("${app.rooms.retention-days:0}") int retentionDays) {
         this.roomRepository = roomRepository;
+        this.retentionDays = retentionDays;
     }
 
     @Scheduled(cron = "0 0 * * * *")
-    public void logInactiveRooms() {
-        LocalDateTime cutoff = LocalDateTime.now().minusDays(INACTIVE_DAYS);
-        List<Room> inactive = roomRepository.findByLastActivityAtBefore(cutoff);
-        if (inactive.isEmpty()) {
-            log.info("Room cleanup: no rooms inactive for more than {} days.", INACTIVE_DAYS);
+    public void cleanUp() {
+        if (retentionDays > 0) {
+            int deleted = roomRepository.deleteByLastActivityAtBefore(
+                    LocalDateTime.now().minusDays(retentionDays));
+            if (deleted > 0) {
+                log.info("Room cleanup: deleted {} room(s) idle for more than {} days.", deleted, retentionDays);
+            }
             return;
         }
-        log.info("Room cleanup: {} room(s) inactive for more than {} days:", inactive.size(), INACTIVE_DAYS);
-        for (Room room : inactive) {
-            log.info("  - room {} (last activity: {})", room.getRoomCode(), room.getLastActivityAt());
+        long idle = roomRepository.countByLastActivityAtBefore(
+                LocalDateTime.now().minusDays(REPORT_AFTER_DAYS));
+        if (idle > 0) {
+            log.info("Room cleanup: {} room(s) idle for more than {} days "
+                    + "(set ROOM_RETENTION_DAYS to delete them automatically).", idle, REPORT_AFTER_DAYS);
         }
     }
 }

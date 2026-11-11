@@ -11,3 +11,6 @@ target/
 .mvn/wrapper/*
 !.mvn/wrapper/maven-wrapper.properties
 *.log
+
+# Frontend build copied in for the single-service image / local check
+src/main/resources/static/

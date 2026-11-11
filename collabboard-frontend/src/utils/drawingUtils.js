@@ -1,13 +1,31 @@
-import { v4 as uuidv4 } from 'uuid';
 import { getStroke } from 'perfect-freehand';
 
 export const GRID_SIZE = 20;
 
+// A stroke is sent as one WebSocket message, and the server caps how large a
+// message (and a shape) may be. Keeping strokes well under that means a long
+// scribble can never be rejected or drop the connection.
+export const MAX_STROKE_POINTS = 5000;
+
+/**
+ * A random unique id.
+ *
+ * `crypto.randomUUID` only exists in secure contexts (https or localhost), so
+ * it is missing when the board is opened over plain http on a LAN address —
+ * exactly the "share on the same WiFi" case. `getRandomValues` works there.
+ * @returns {string}
+ */
 export function generateId() {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return crypto.randomUUID();
   }
-  return uuidv4();
+  const bytes = new Uint8Array(16);
+  if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
+    crypto.getRandomValues(bytes);
+  } else {
+    for (let i = 0; i < bytes.length; i += 1) bytes[i] = Math.floor(Math.random() * 256);
+  }
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 export function snap(value, enabled, size = GRID_SIZE) {
@@ -17,6 +35,33 @@ export function snap(value, enabled, size = GRID_SIZE) {
 
 export function snapPoint(point, enabled) {
   return { x: snap(point.x, enabled), y: snap(point.y, enabled) };
+}
+
+/** Two decimals is far below a pixel and roughly halves the JSON size. */
+export function roundCoord(value) {
+  return Math.round(value * 100) / 100;
+}
+
+/**
+ * Adds a point to a flat [x1, y1, x2, y2, …] stroke.
+ *
+ * Returns the same array when the point is closer than `minDistance` to the
+ * previous one (mouse events fire far more often than the stroke needs) or
+ * when the stroke is already at its maximum length.
+ * @param {number[]} points
+ * @param {number} x
+ * @param {number} y
+ * @param {number} [minDistance]
+ * @returns {number[]}
+ */
+export function appendStrokePoint(points, x, y, minDistance = 0) {
+  if (points.length >= MAX_STROKE_POINTS * 2) return points;
+  if (points.length >= 2) {
+    const dx = x - points[points.length - 2];
+    const dy = y - points[points.length - 1];
+    if (dx * dx + dy * dy < minDistance * minDistance) return points;
+  }
+  return [...points, roundCoord(x), roundCoord(y)];
 }
 
 export function strokeOptions(tool, strokeWidth) {
@@ -51,11 +96,13 @@ export function freehandPath(flatPoints, tool, strokeWidth) {
   return getSvgPathFromStroke(outline);
 }
 
+/** Parses a stored board, tolerating anything malformed. */
 export function parseSnapshot(snapshot) {
   if (!snapshot) return [];
   try {
     const parsed = JSON.parse(snapshot);
-    return Array.isArray(parsed) ? parsed : [];
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((s) => s && typeof s === 'object' && typeof s.id === 'string');
   } catch {
     return [];
   }
@@ -75,8 +122,10 @@ export function shapesBounds(shapes) {
   };
   shapes.forEach((s) => {
     if ((s.tool === 'pen' || s.tool === 'highlighter' || s.tool === 'arrow') && s.points) {
+      const sx = s.scaleX ?? 1;
+      const sy = s.scaleY ?? 1;
       for (let i = 0; i < s.points.length; i += 2) {
-        include((s.points[i] || 0) + (s.x || 0), (s.points[i + 1] || 0) + (s.y || 0));
+        include((s.points[i] || 0) * sx + (s.x || 0), (s.points[i + 1] || 0) * sy + (s.y || 0));
       }
     } else if (s.tool === 'stickyNote') {
       include(s.x, s.y);

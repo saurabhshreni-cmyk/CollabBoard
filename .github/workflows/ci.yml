@@ -6,6 +6,14 @@ on:
   pull_request:
   workflow_dispatch:
 
+# A newer push to the same branch makes the older run pointless.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
 jobs:
   backend:
     name: Backend (Java 17 / Maven)
@@ -23,11 +31,9 @@ jobs:
           distribution: temurin
           cache: maven
 
-      - name: Run tests
-        run: mvn -B test
-
-      - name: Package
-        run: mvn -B package -DskipTests
+      # The wrapper pins the Maven version, so CI builds exactly like a laptop.
+      - name: Test and package
+        run: ./mvnw -B verify
 
       - name: Upload jar
         uses: actions/upload-artifact@v5
@@ -37,7 +43,7 @@ jobs:
           if-no-files-found: error
 
   frontend:
-    name: Frontend (Node 20 / Vite)
+    name: Frontend (Node 22 / Vite)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -45,21 +51,27 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Set up Node 20
+      - name: Set up Node 22
         uses: actions/setup-node@v5
         with:
-          node-version: '20'
+          node-version: '22'
           cache: npm
           cache-dependency-path: collabboard-frontend/package-lock.json
 
       - name: Install dependencies
-        run: npm ci --no-audit --no-fund
+        run: npm ci --no-fund
+
+      - name: Lint
+        run: npm run lint -- --max-warnings 0
 
       - name: Run tests
         run: npm test
 
       - name: Build
         run: npm run build
+
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
 
       - name: Upload build output
         uses: actions/upload-artifact@v5
@@ -73,6 +85,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+
+      # The image render.yaml deploys: frontend baked into the server.
+      - name: Build single-service image
+        run: docker build -t collabboard:ci .
 
       - name: Build backend image
         run: docker build -t collabboard-backend:ci ./collabboard-backend

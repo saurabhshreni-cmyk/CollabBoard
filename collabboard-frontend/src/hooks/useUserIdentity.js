@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { PALETTE } from '../utils/colorUtils.js';
+import { generateId } from '../utils/drawingUtils.js';
 
 const ADJECTIVES = [
   'Blue', 'Red', 'Green', 'Swift', 'Brave', 'Clever', 'Bold', 'Happy',
@@ -17,35 +18,48 @@ function pick(arr) {
   return arr[Math.floor(Math.random() * arr.length)];
 }
 
-function generateUserId() {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return crypto.randomUUID();
+// Storage can be unavailable (private mode, blocked cookies). The board must
+// still work; the person just gets a fresh identity on each visit.
+function readStored(key) {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
   }
-  return 'user-' + Math.random().toString(36).slice(2) + Date.now().toString(36);
+}
+
+function writeStored(key, value) {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    // Not persisted; nothing else to do.
+  }
+}
+
+function stored(key, create) {
+  const existing = readStored(key);
+  if (existing) return existing;
+  const value = create();
+  writeStored(key, value);
+  return value;
 }
 
 function buildIdentity() {
-  let userId = localStorage.getItem('cb_userId');
-  let displayName = localStorage.getItem('cb_displayName');
-  let userColor = localStorage.getItem('cb_userColor');
-
-  if (!userId) {
-    userId = generateUserId();
-    localStorage.setItem('cb_userId', userId);
-  }
-  if (!displayName) {
-    const number = Math.floor(Math.random() * 90) + 10; // two-digit 10-99
-    displayName = `${pick(ADJECTIVES)}${pick(ANIMALS)}${number}`;
-    localStorage.setItem('cb_displayName', displayName);
-  }
-  if (!userColor) {
-    userColor = pick(PALETTE);
-    localStorage.setItem('cb_userColor', userColor);
-  }
-
-  return { userId, displayName, userColor };
+  return {
+    // Who the person is: shared by every tab in this browser.
+    userId: stored('cb_userId', generateId),
+    displayName: stored(
+      'cb_displayName',
+      () => `${pick(ADJECTIVES)}${pick(ANIMALS)}${Math.floor(Math.random() * 90) + 10}`
+    ),
+    userColor: stored('cb_userColor', () => pick(PALETTE)),
+    // Which tab this is: unique per page load, never stored. Two tabs of the
+    // same person must be able to tell each other's changes from their own.
+    clientId: generateId(),
+  };
 }
 
+/** @returns {{ userId: string, displayName: string, userColor: string, clientId: string }} */
 export default function useUserIdentity() {
   const [identity] = useState(buildIdentity);
   return identity;

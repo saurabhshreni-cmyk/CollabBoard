@@ -2,32 +2,51 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { Client } from '@stomp/stompjs';
 import SockJS from 'sockjs-client';
 import { WS_URL } from '../config.js';
+import { isBoardEvent } from '../utils/boardOps.js';
 
-// Connection status: 'connecting' | 'connected' | 'reconnecting' | 'disconnected'
+const RECONNECT_DELAY_MS = 3000;
+const HEARTBEAT_MS = 10000;
+// Changes made while offline wait here and are sent on reconnect. Bounded so a
+// very long offline session cannot grow without limit; the oldest are dropped.
+const MAX_QUEUED_EVENTS = 2000;
+// If the server never echoes our sync marker, resync anyway after this long.
+const SYNC_FALLBACK_MS = 5000;
+
+/**
+ * Owns the STOMP connection for one room.
+ *
+ * Connection status: 'connecting' | 'connected' | 'reconnecting' | 'disconnected'
+ *
+ * Reliability model:
+ *  - Board changes made while the socket is down are queued and flushed, in
+ *    order, as soon as it is back.
+ *  - After every (re)connect the hook sends a `sync` marker behind the queue.
+ *    The server handles one client's messages in order, so when the marker
+ *    comes back every queued change has been applied — `onSynced` then tells
+ *    the caller it is safe to reload the authoritative board.
+ */
 export default function useWebSocket({
   roomCode,
   identity,
   onDrawEvent,
   onPresence,
   onStatusChange,
+  onSynced,
 }) {
   const stompClient = useRef(null);
+  const outbox = useRef([]);
+  const syncTimer = useRef(null);
   const [status, setStatus] = useState('connecting');
   const hadConnected = useRef(false);
 
-  const onDrawEventRef = useRef(onDrawEvent);
-  const onPresenceRef = useRef(onPresence);
-  const onStatusRef = useRef(onStatusChange);
-
+  const handlers = useRef({ onDrawEvent, onPresence, onStatusChange, onSynced });
   useEffect(() => {
-    onDrawEventRef.current = onDrawEvent;
-    onPresenceRef.current = onPresence;
-    onStatusRef.current = onStatusChange;
-  }, [onDrawEvent, onPresence, onStatusChange]);
+    handlers.current = { onDrawEvent, onPresence, onStatusChange, onSynced };
+  }, [onDrawEvent, onPresence, onStatusChange, onSynced]);
 
   const updateStatus = useCallback((next) => {
     setStatus(next);
-    if (onStatusRef.current) onStatusRef.current(next);
+    handlers.current.onStatusChange?.(next);
   }, []);
 
   useEffect(() => {
@@ -35,97 +54,124 @@ export default function useWebSocket({
       return undefined;
     }
 
-    const sendJoin = (client) => {
-      client.publish({
-        destination: `/app/room/${roomCode}/presence`,
-        body: JSON.stringify({
-          type: 'join',
-          userId: identity.userId,
-          userName: identity.displayName,
-          userColor: identity.userColor,
-        }),
-      });
+    const drawDestination = `/app/room/${roomCode}/draw`;
+    const presenceDestination = `/app/room/${roomCode}/presence`;
+    const stamp = (event) => ({ ...event, userId: identity.userId, clientId: identity.clientId });
+
+    const finishSync = () => {
+      if (syncTimer.current === null) return;
+      clearTimeout(syncTimer.current);
+      syncTimer.current = null;
+      handlers.current.onSynced?.();
     };
 
-    const sendLeave = (client) => {
-      try {
-        client.publish({
-          destination: `/app/room/${roomCode}/presence`,
-          body: JSON.stringify({ type: 'leave', userId: identity.userId }),
-        });
-      } catch {
-        // best-effort
-      }
-    };
+    // Set when this effect is torn down, so closing the socket on purpose is
+    // not reported as a lost connection.
+    let closing = false;
 
     const client = new Client({
       webSocketFactory: () => new SockJS(WS_URL),
-      reconnectDelay: 3000,
-      heartbeatIncoming: 10000,
-      heartbeatOutgoing: 10000,
+      reconnectDelay: RECONNECT_DELAY_MS,
+      heartbeatIncoming: HEARTBEAT_MS,
+      heartbeatOutgoing: HEARTBEAT_MS,
       onConnect: () => {
-        updateStatus('connected');
-
         client.subscribe(`/topic/room/${roomCode}`, (message) => {
+          let data;
           try {
-            const data = JSON.parse(message.body);
-            if (onDrawEventRef.current) onDrawEventRef.current(data);
-          } catch (err) {
-            console.error('Failed to parse draw event', err);
+            data = JSON.parse(message.body);
+          } catch {
+            return; // not ours to interpret; ignore the frame
           }
+          if (data?.type === 'sync') {
+            if (data.clientId === identity.clientId) finishSync();
+            return;
+          }
+          handlers.current.onDrawEvent?.(data);
         });
 
         client.subscribe(`/topic/room/${roomCode}/presence`, (message) => {
           try {
-            const data = JSON.parse(message.body);
-            if (onPresenceRef.current) onPresenceRef.current(data);
-          } catch (err) {
-            console.error('Failed to parse presence', err);
+            handlers.current.onPresence?.(JSON.parse(message.body));
+          } catch {
+            // ignore a malformed roster frame; the next one replaces it
           }
         });
 
-        sendJoin(client);
+        client.publish({
+          destination: presenceDestination,
+          body: JSON.stringify({
+            type: 'join',
+            userId: identity.userId,
+            userName: identity.displayName,
+            userColor: identity.userColor,
+          }),
+        });
+
+        const queued = outbox.current;
+        outbox.current = [];
+        queued.forEach((event) => {
+          client.publish({ destination: drawDestination, body: JSON.stringify(event) });
+        });
+
+        clearTimeout(syncTimer.current);
+        syncTimer.current = setTimeout(finishSync, SYNC_FALLBACK_MS);
+        client.publish({ destination: drawDestination, body: JSON.stringify(stamp({ type: 'sync' })) });
+
         hadConnected.current = true;
+        updateStatus('connected');
       },
       onWebSocketClose: () => {
+        if (closing) return;
         updateStatus(hadConnected.current ? 'reconnecting' : 'connecting');
-      },
-      onStompError: (frame) => {
-        console.error('STOMP error', frame.headers['message'], frame.body);
       },
     });
 
-    const handleBeforeUnload = () => sendLeave(client);
-    window.addEventListener('beforeunload', handleBeforeUnload);
+    const sendLeave = () => {
+      if (!client.connected) return;
+      try {
+        client.publish({ destination: presenceDestination, body: JSON.stringify({ type: 'leave' }) });
+      } catch {
+        // Best effort: the server also removes us when the socket closes.
+      }
+    };
 
+    window.addEventListener('pagehide', sendLeave);
     client.activate();
-    stompClient.current = client;
+    stompClient.current = { client, drawDestination, stamp };
 
     return () => {
-      window.removeEventListener('beforeunload', handleBeforeUnload);
-      sendLeave(client);
+      window.removeEventListener('pagehide', sendLeave);
+      clearTimeout(syncTimer.current);
+      syncTimer.current = null;
+      sendLeave();
+      closing = true;
       client.deactivate();
       stompClient.current = null;
+      outbox.current = [];
       updateStatus('disconnected');
     };
   }, [roomCode, identity, updateStatus]);
 
-  // Returns true when the event was actually published, so callers can fall
-  // back to the REST API while the socket is down.
-  const sendDrawEvent = useCallback(
-    (event) => {
-      const client = stompClient.current;
-      if (client && client.connected) {
-        client.publish({
-          destination: `/app/room/${roomCode}/draw`,
-          body: JSON.stringify(event),
-        });
-        return true;
-      }
-      return false;
-    },
-    [roomCode]
-  );
+  /**
+   * Sends an event to the room, stamped with this tab's identity.
+   *
+   * @returns {boolean} true if it went out now. Board changes that could not
+   *   be sent are queued for the next reconnect; anything else (cursors,
+   *   lasers, renames) is dropped, so callers can fall back if they need to.
+   */
+  const sendDrawEvent = useCallback((event) => {
+    const connection = stompClient.current;
+    if (!connection) return false;
+    const stamped = connection.stamp(event);
+    if (connection.client.connected) {
+      connection.client.publish({ destination: connection.drawDestination, body: JSON.stringify(stamped) });
+      return true;
+    }
+    if (isBoardEvent(event.type)) {
+      outbox.current = [...outbox.current, stamped].slice(-MAX_QUEUED_EVENTS);
+    }
+    return false;
+  }, []);
 
   return { sendDrawEvent, status };
 }

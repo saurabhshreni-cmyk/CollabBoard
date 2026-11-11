@@ -1,9 +1,9 @@
-# Render blueprint — deploys the backend and its database in one step.
+# Render blueprint — deploys the whole app (web UI + API + database) in one step.
 #
 # Usage: push this repo to GitHub, then in Render click
-#   New +  ->  Blueprint  ->  select the repo.
-# Render reads this file and creates both services. The only manual step is
-# setting CORS_ALLOWED_ORIGINS to your Vercel URL once the frontend is live.
+#   New +  ->  Blueprint  ->  select the repo  ->  Apply.
+# There is nothing to configure afterwards: the server serves the web UI
+# itself, so the app lives at a single URL with no cross-origin settings.
 
 databases:
   - name: collabboard-db
@@ -13,11 +13,12 @@ databases:
 
 services:
   - type: web
-    name: collabboard-backend
+    name: collabboard
     runtime: docker
     plan: free
-    rootDir: collabboard-backend
+    # The root Dockerfile builds the frontend and bakes it into the server.
     dockerfilePath: ./Dockerfile
+    dockerContext: .
     healthCheckPath: /api/health
     envVars:
       # Render supplies a postgresql:// URL. DatabaseUrlEnvironmentPostProcessor
@@ -27,8 +28,6 @@ services:
         fromDatabase:
           name: collabboard-db
           property: connectionString
-      # Set this to your deployed frontend origin, e.g.
-      #   https://collabboard.vercel.app
-      # Leaving it as * works but allows any site to call your API.
-      - key: CORS_ALLOWED_ORIGINS
-        sync: false
+      # CORS_ALLOWED_ORIGINS is deliberately not set: the server then allows
+      # only its own public URL (RENDER_EXTERNAL_URL, provided by Render).
+      # Set it only if you host the frontend somewhere else, e.g. on Vercel.

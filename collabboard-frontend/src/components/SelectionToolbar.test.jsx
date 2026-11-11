@@ -6,6 +6,24 @@ import { PALETTE } from '../utils/colorUtils.js';
 const noop = () => {};
 
 describe('SelectionToolbar', () => {
+  it('offers only the given colours and hides line width when it does not apply', () => {
+    render(
+      <SelectionToolbar
+        x={0}
+        y={0}
+        colors={['#FFEAA7', '#B3D9FF']}
+        showStroke={false}
+        onColor={() => {}}
+        onStroke={() => {}}
+        onDelete={() => {}}
+      />
+    );
+
+    expect(screen.getAllByTitle(/^Color /)).toHaveLength(2);
+    expect(screen.queryByTitle('Stroke width')).toBeNull();
+    expect(screen.getByTitle('Delete (Del)')).toBeTruthy();
+  });
+
   it('offers the first six palette colours', () => {
     const { container } = render(
       <SelectionToolbar x={100} y={100} onColor={noop} onStroke={noop} onDelete={noop} />

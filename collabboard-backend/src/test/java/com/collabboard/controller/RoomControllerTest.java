@@ -69,7 +69,34 @@ class RoomControllerTest {
     @Test
     void getRoomReturns404ForUnknownCode() throws Exception {
         mockMvc.perform(get("/api/rooms/{code}", "ZZZZZZ"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.detail").value("Room not found: ZZZZZZ"));
+    }
+
+    @Test
+    void getRoomAcceptsLowerCaseCodes() throws Exception {
+        String code = roomService.createRoom().getRoomCode();
+
+        mockMvc.perform(get("/api/rooms/{code}", code.toLowerCase()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.roomCode").value(code));
+    }
+
+    @Test
+    void usersEndpointReturns404ForUnknownRoom() throws Exception {
+        mockMvc.perform(get("/api/rooms/{code}/users", "ZZZZZZ"))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void creatingRoomsTooFastIsRateLimited() throws Exception {
+        for (int i = 0; i < 20; i++) {
+            mockMvc.perform(post("/api/rooms").with(r -> { r.setRemoteAddr("9.9.9.9"); return r; }))
+                    .andExpect(status().isCreated());
+        }
+
+        mockMvc.perform(post("/api/rooms").with(r -> { r.setRemoteAddr("9.9.9.9"); return r; }))
+                .andExpect(status().isTooManyRequests());
     }
 
     @Test

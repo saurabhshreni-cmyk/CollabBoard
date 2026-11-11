@@ -2,6 +2,7 @@ package com.collabboard.service;
 
 import com.collabboard.dto.DrawEventDto;
 import com.collabboard.dto.ShapeDto;
+import com.collabboard.exception.BoardEventRejectedException;
 import com.collabboard.model.Room;
 import com.collabboard.repository.RoomRepository;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -13,11 +14,16 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -172,7 +178,7 @@ class RoomServiceTest {
     }
 
     @Test
-    void updateEventAppendsWhenShapeIsUnknown() {
+    void updateEventForADeletedShapeDoesNotBringItBack() {
         String code = roomService.createRoom().getRoomCode();
 
         DrawEventDto update = new DrawEventDto();
@@ -181,7 +187,7 @@ class RoomServiceTest {
 
         Room room = roomService.updateSnapshot(code, update);
 
-        assertThat(parse(room.getBoardSnapshot())).hasSize(1);
+        assertThat(parse(room.getBoardSnapshot())).isEmpty();
     }
 
     @Test
@@ -273,6 +279,116 @@ class RoomServiceTest {
         roomService.createRoom();
         roomService.createRoom();
         assertThat(roomService.countRooms()).isEqualTo(2);
+    }
+
+    // ---------- robustness ----------
+
+    @Test
+    void roomCodesAreCaseInsensitive() {
+        String code = roomService.createRoom().getRoomCode();
+
+        assertThat(roomService.getRoom(" " + code.toLowerCase() + " ").getRoomCode()).isEqualTo(code);
+    }
+
+    @Test
+    void malformedRoomCodeIsNotFoundAndNeverEchoed() {
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> roomService.getRoom("<script>alert(1)</script>"));
+
+        assertThat(ex.getStatusCode().value()).isEqualTo(404);
+        assertThat(ex.getReason()).doesNotContain("script");
+    }
+
+    @Test
+    void drawingTheSameShapeTwiceDoesNotDuplicateIt() {
+        String code = roomService.createRoom().getRoomCode();
+        roomService.updateSnapshot(code, drawEvent("s1", "pen"));
+
+        Room room = roomService.updateSnapshot(code, drawEvent("s1", "pen"));
+
+        assertThat(parse(room.getBoardSnapshot())).hasSize(1);
+    }
+
+    @Test
+    void unsetShapeFieldsAreNotStored() {
+        String code = roomService.createRoom().getRoomCode();
+
+        Room room = roomService.updateSnapshot(code, drawEvent("s1", "pen"));
+
+        assertThat(room.getBoardSnapshot()).doesNotContain("null");
+    }
+
+    @Test
+    void drawBeyondTheShapeLimitIsRejectedAndTheBoardIsUnchanged() {
+        String code = roomService.createRoom().getRoomCode();
+        List<ShapeDto> full = new ArrayList<>();
+        for (int i = 0; i < BoardEventSanitizer.MAX_SHAPES_PER_BOARD; i++) {
+            ShapeDto dot = new ShapeDto();
+            dot.setId("s" + i);
+            dot.setTool("emoji");
+            full.add(dot);
+        }
+        DrawEventDto replace = new DrawEventDto();
+        replace.setType("replace");
+        replace.setShapes(full);
+        roomService.updateSnapshot(code, replace);
+
+        assertThrows(BoardEventRejectedException.class,
+                () -> roomService.updateSnapshot(code, drawEvent("one-too-many", "pen")));
+
+        assertThat(parse(roomService.getRoom(code).getBoardSnapshot()))
+                .hasSize(BoardEventSanitizer.MAX_SHAPES_PER_BOARD);
+    }
+
+    @Test
+    void concurrentDrawsOnOneBoardAreAllKept() throws Exception {
+        String code = roomService.createRoom().getRoomCode();
+        int writers = 8;
+        int shapesEach = 15;
+        ExecutorService pool = Executors.newFixedThreadPool(writers);
+        try {
+            List<Future<?>> futures = new ArrayList<>();
+            for (int w = 0; w < writers; w++) {
+                int writer = w;
+                futures.add(pool.submit(() -> {
+                    for (int i = 0; i < shapesEach; i++) {
+                        roomService.updateSnapshot(code, drawEvent("w" + writer + "-" + i, "pen"));
+                    }
+                }));
+            }
+            for (Future<?> future : futures) {
+                future.get(60, TimeUnit.SECONDS);
+            }
+        } finally {
+            pool.shutdownNow();
+        }
+
+        // A lost update would leave fewer shapes than were drawn.
+        assertThat(parse(roomService.getRoom(code).getBoardSnapshot())).hasSize(writers * shapesEach);
+    }
+
+    @Test
+    void cleanupDeletesOnlyRoomsIdlePastTheRetentionPeriod() {
+        Room stale = roomService.createRoom();
+        Room fresh = roomService.createRoom();
+        stale.setLastActivityAt(LocalDateTime.now().minusDays(40));
+        roomRepository.save(stale);
+
+        new RoomCleanupTask(roomRepository, 30).cleanUp();
+
+        assertThat(roomRepository.findByRoomCode(stale.getRoomCode())).isEmpty();
+        assertThat(roomRepository.findByRoomCode(fresh.getRoomCode())).isPresent();
+    }
+
+    @Test
+    void cleanupKeepsEverythingWhenRetentionIsDisabled() {
+        Room stale = roomService.createRoom();
+        stale.setLastActivityAt(LocalDateTime.now().minusDays(400));
+        roomRepository.save(stale);
+
+        new RoomCleanupTask(roomRepository, 0).cleanUp();
+
+        assertThat(roomRepository.findByRoomCode(stale.getRoomCode())).isPresent();
     }
 
     // ---------- helpers ----------

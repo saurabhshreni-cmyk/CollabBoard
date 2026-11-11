@@ -1,57 +1,60 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 
-const MAX_DEPTH = 50;
+const MAX_DEPTH = 100;
 
 /**
- * Snapshot-based history. Each entry is a full shapes array (deep-cloned on
- * push so later mutations don't corrupt earlier snapshots).
+ * Undo/redo stack of this person's own actions.
+ *
+ * Each entry is `{ undo: BoardEvent[], redo: BoardEvent[] }` (see
+ * utils/boardOps.js). The hook only stores entries and tracks the position;
+ * the caller applies and broadcasts the events it gets back.
  */
 export default function useHistory() {
-  const stack = useRef([[]]);
-  const index = useRef(0);
-  const [version, setVersion] = useState(0); // forces re-render for button state
+  const entries = useRef([]);
+  // Number of entries currently "done"; everything past it can be redone.
+  const position = useRef(0);
+  const [, setVersion] = useState(0); // re-render so canUndo/canRedo update
 
-  const bump = () => setVersion((v) => v + 1);
+  const bump = useCallback(() => setVersion((v) => v + 1), []);
 
-  const reset = useCallback((shapes) => {
-    stack.current = [clone(shapes)];
-    index.current = 0;
+  const reset = useCallback(() => {
+    entries.current = [];
+    position.current = 0;
     bump();
-  }, []);
+  }, [bump]);
 
-  const push = useCallback((shapes) => {
-    // Drop any "redo" entries beyond the current pointer.
-    const truncated = stack.current.slice(0, index.current + 1);
-    truncated.push(clone(shapes));
-    // Cap depth.
-    while (truncated.length > MAX_DEPTH) {
-      truncated.shift();
-    }
-    stack.current = truncated;
-    index.current = truncated.length - 1;
+  const record = useCallback((entry) => {
+    if (!entry || entry.undo.length + entry.redo.length === 0) return;
+    // A new action discards anything that had been undone.
+    const kept = entries.current.slice(0, position.current);
+    const next = [...kept, entry].slice(-MAX_DEPTH);
+    entries.current = next;
+    position.current = next.length;
     bump();
-  }, []);
+  }, [bump]);
 
+  /** @returns {object[] | null} events that reverse the last action */
   const undo = useCallback(() => {
-    if (index.current <= 0) return null;
-    index.current -= 1;
+    if (position.current <= 0) return null;
+    position.current -= 1;
     bump();
-    return clone(stack.current[index.current]);
-  }, []);
+    return entries.current[position.current].undo;
+  }, [bump]);
 
+  /** @returns {object[] | null} events that re-apply the last undone action */
   const redo = useCallback(() => {
-    if (index.current >= stack.current.length - 1) return null;
-    index.current += 1;
+    if (position.current >= entries.current.length) return null;
+    const entry = entries.current[position.current];
+    position.current += 1;
     bump();
-    return clone(stack.current[index.current]);
-  }, []);
+    return entry.redo;
+  }, [bump]);
 
-  const canUndo = index.current > 0;
-  const canRedo = index.current < stack.current.length - 1;
+  const canUndo = position.current > 0;
+  const canRedo = position.current < entries.current.length;
 
-  return { reset, push, undo, redo, canUndo, canRedo, version };
-}
-
-function clone(shapes) {
-  return Array.isArray(shapes) ? shapes.map((s) => ({ ...s })) : [];
+  return useMemo(
+    () => ({ reset, record, undo, redo, canUndo, canRedo }),
+    [reset, record, undo, redo, canUndo, canRedo]
+  );
 }

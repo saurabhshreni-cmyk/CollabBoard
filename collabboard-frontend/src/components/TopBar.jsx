@@ -60,18 +60,24 @@ export default function TopBar({
   const st = STATUS_META[status] || STATUS_META.connecting;
 
   return (
-    <div className="h-14 w-full bg-gray-900 border-b border-gray-700 flex items-center px-4 gap-3 flex-shrink-0 z-40">
+    // On a phone there is room for the essentials only: status, Share, who is
+    // here, undo/redo, export and settings. Zoom (pinch instead), the grid
+    // toggle and the board name (both in Settings) appear from tablet width up.
+    <header className="h-14 w-full bg-gray-900 border-b border-gray-700 flex items-center px-2 sm:px-4 gap-1.5 sm:gap-3 flex-shrink-0 z-40">
       <div className="flex items-center gap-2">
         <span className="font-extrabold text-lg text-indigo-400 select-none">
-          Collab<span className="text-white">Board</span>
+          <span className="sm:hidden" aria-hidden="true">C<span className="text-white">B</span></span>
+          <span className="hidden sm:inline">Collab<span className="text-white">Board</span></span>
         </span>
-        <span className="flex items-center gap-1" title={st.label}>
-          <span className={`w-2.5 h-2.5 rounded-full ${st.color}`} />
+        <span className="flex items-center gap-1.5" title={st.label} role="status">
+          <span className={`w-2.5 h-2.5 rounded-full ${st.color}`} aria-hidden="true" />
+          {/* Colour alone is not enough: say it when the board is not live. */}
+          <span className={status === 'connected' ? 'sr-only' : 'text-xs text-yellow-300'}>{st.label}</span>
         </span>
       </div>
 
-      <div className="flex-1 flex items-center justify-center gap-2 min-w-0">
-        <span className="bg-gray-800 text-white rounded px-2 py-1 font-mono text-sm tracking-widest">{roomCode}</span>
+      <div className="flex-1 flex items-center justify-start sm:justify-center gap-2 min-w-0">
+        <span className="hidden sm:inline bg-gray-800 text-white rounded px-2 py-1 font-mono text-sm tracking-widest">{roomCode}</span>
         <button
           type="button"
           onClick={onShare || handleCopy}
@@ -91,20 +97,20 @@ export default function TopBar({
               if (e.key === 'Enter') commitName();
               if (e.key === 'Escape') { setNameDraft(boardName || ''); setEditingName(false); }
             }}
-            className="bg-gray-800 border border-gray-600 text-white text-sm rounded px-2 py-1 outline-none focus:ring-2 focus:ring-indigo-500 max-w-[200px]"
+            className="hidden md:block bg-gray-800 border border-gray-600 text-white text-sm rounded px-2 py-1 outline-none focus:ring-2 focus:ring-indigo-500 max-w-[200px]"
           />
         ) : (
-          <button type="button" onClick={() => setEditingName(true)} title="Rename board" className="text-sm text-gray-200 hover:text-white truncate max-w-[200px]">
+          <button type="button" onClick={() => setEditingName(true)} title="Rename board" className="hidden md:block text-sm text-gray-200 hover:text-white truncate max-w-[200px]">
             {boardName || 'Untitled Board'} ✎
           </button>
         )}
       </div>
 
-      <div className="flex items-center gap-2">
-        <div className="relative" ref={usersRef}>
-          <button type="button" onClick={() => setUsersOpen((o) => !o)} className="flex items-center -space-x-2">
-            {visible.map((u) => (
-              <span key={u.userId} title={u.displayName} className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white border-2 border-gray-900" style={{ backgroundColor: u.userColor }}>
+      <div className="flex items-center gap-0.5 sm:gap-2">
+        <div className="relative mr-1 sm:mr-0" ref={usersRef}>
+          <button type="button" onClick={() => setUsersOpen((o) => !o)} aria-label={`${connectedUsers.length} people online`} aria-expanded={usersOpen} className="flex items-center -space-x-2">
+            {visible.map((u, i) => (
+              <span key={u.userId} title={u.displayName} className={`${i > 1 ? 'hidden sm:flex' : 'flex'} w-8 h-8 rounded-full items-center justify-center text-xs font-bold text-white border-2 border-gray-900`} style={{ backgroundColor: u.userColor }}>
                 {u.displayName ? u.displayName.charAt(0).toUpperCase() : '?'}
               </span>
             ))}
@@ -127,19 +133,21 @@ export default function TopBar({
           )}
         </div>
 
-        <div className="w-px h-6 bg-gray-700" />
+        <div className="hidden md:block w-px h-6 bg-gray-700" />
 
-        <div className="flex items-center gap-1">
+        <div className="hidden md:flex items-center gap-1">
           <IconBtn title="Zoom out (-)" onClick={onZoomOut}>−</IconBtn>
           <button type="button" onClick={onResetZoom} title="Reset zoom (0)" className="text-xs text-gray-200 hover:bg-gray-700 rounded px-2 py-1 w-12">{zoomPercent}%</button>
           <IconBtn title="Zoom in (+)" onClick={onZoomIn}>+</IconBtn>
         </div>
 
-        <div className="w-px h-6 bg-gray-700" />
+        <div className="hidden sm:block w-px h-6 bg-gray-700" />
 
         <IconBtn title="Undo (Ctrl+Z)" onClick={onUndo} disabled={!canUndo}>↶</IconBtn>
         <IconBtn title="Redo (Ctrl+Y)" onClick={onRedo} disabled={!canRedo}>↷</IconBtn>
-        <IconBtn title="Toggle grid" onClick={onToggleGrid} active={gridVisible}>▦</IconBtn>
+        <span className="hidden sm:inline-flex">
+          <IconBtn title="Toggle grid" onClick={onToggleGrid} active={gridVisible}>▦</IconBtn>
+        </span>
 
         <div className="relative" ref={exportRef}>
           <IconBtn title="Export" onClick={() => setExportOpen((o) => !o)}>⬇</IconBtn>
@@ -152,10 +160,12 @@ export default function TopBar({
           )}
         </div>
 
-        <IconBtn title="Keyboard shortcuts (?)" onClick={onOpenShortcuts}>⌨</IconBtn>
+        <span className="hidden md:inline-flex">
+          <IconBtn title="Keyboard shortcuts (?)" onClick={onOpenShortcuts}>⌨</IconBtn>
+        </span>
         <IconBtn title="Settings" onClick={onOpenSettings}>⚙</IconBtn>
       </div>
-    </div>
+    </header>
   );
 }
 
@@ -164,6 +174,8 @@ function IconBtn({ children, title, onClick, disabled, active }) {
     <button
       type="button"
       title={title}
+      aria-label={title}
+      aria-pressed={active === undefined ? undefined : active}
       onClick={onClick}
       disabled={disabled}
       className={`w-9 h-9 rounded-lg flex items-center justify-center text-lg transition-colors ${

@@ -1,0 +1,13 @@
+# Keeps the build context for the root Dockerfile small and free of local state.
+.git
+.github
+logs
+**/node_modules
+**/dist
+**/target
+**/coverage
+**/.env
+**/*.log
+.idea
+.vscode
+*.md

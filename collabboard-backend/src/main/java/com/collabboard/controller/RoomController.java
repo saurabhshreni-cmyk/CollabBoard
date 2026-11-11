@@ -6,7 +6,6 @@ import com.collabboard.model.Room;
 import com.collabboard.service.PresenceService;
 import com.collabboard.service.RoomService;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -39,26 +38,28 @@ public class RoomController {
     }
 
     @GetMapping("/{roomCode}")
-    public ResponseEntity<RoomResponseDto> getRoom(@PathVariable String roomCode) {
-        return ResponseEntity.ok(toDto(roomService.getRoom(roomCode)));
+    public RoomResponseDto getRoom(@PathVariable String roomCode) {
+        return toDto(roomService.getRoom(roomCode));
     }
 
     @PutMapping("/{roomCode}/name")
-    public ResponseEntity<RoomResponseDto> updateName(
+    public RoomResponseDto updateName(
             @PathVariable String roomCode,
             @RequestBody(required = false) Map<String, String> body) {
         String boardName = body != null ? body.get("boardName") : null;
-        return ResponseEntity.ok(toDto(roomService.updateBoardName(roomCode, boardName)));
+        return toDto(roomService.updateBoardName(roomCode, boardName));
     }
 
     @DeleteMapping("/{roomCode}/clear")
-    public ResponseEntity<RoomResponseDto> clearRoom(@PathVariable String roomCode) {
-        return ResponseEntity.ok(toDto(roomService.clearBoard(roomCode)));
+    public RoomResponseDto clearRoom(@PathVariable String roomCode) {
+        return toDto(roomService.clearBoard(roomCode));
     }
 
     @GetMapping("/{roomCode}/users")
     public List<UserPresenceDto> getUsers(@PathVariable String roomCode) {
-        return presenceService.getUsers(roomCode);
+        // Resolving the room first gives unknown codes a 404 instead of an
+        // empty roster, and normalises the code's case.
+        return presenceService.getUsers(roomService.getRoom(roomCode).getRoomCode());
     }
 
     private RoomResponseDto toDto(Room room) {

@@ -27,6 +27,8 @@ function ColorButton({ color, onChange, title }) {
       <button
         type="button"
         title={title}
+        aria-label={title}
+        aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
         className="w-7 h-7 rounded-md border border-gray-600"
         style={{
@@ -43,7 +45,7 @@ function ColorButton({ color, onChange, title }) {
           <HexColorPicker color={isTransparent ? '#ffffff' : color} onChange={onChange} />
           <div className="flex flex-wrap gap-1 mt-2 w-[200px]">
             {PALETTE.map((c) => (
-              <button key={c} type="button" onClick={() => onChange(c)} className="w-6 h-6 rounded" style={{ backgroundColor: c }} />
+              <button key={c} type="button" aria-label={`Colour ${c}`} onClick={() => onChange(c)} className="w-6 h-6 rounded" style={{ backgroundColor: c }} />
             ))}
             {title.includes('Fill') && (
               <button type="button" onClick={() => onChange('transparent')} className="w-6 h-6 rounded border border-gray-600 text-[10px] text-gray-300">None</button>
@@ -89,7 +91,7 @@ export default function Toolbar({
             <>
               <span className="text-[11px] text-gray-400">Stroke</span>
               <ColorButton color={strokeColor} onChange={setStrokeColor} title="Stroke color" />
-              <input type="range" min={1} max={20} value={strokeWidth} onChange={(e) => setStrokeWidth(Number(e.target.value))} className="w-24 accent-indigo-500" />
+              <input type="range" aria-label="Stroke width" min={1} max={20} value={strokeWidth} onChange={(e) => setStrokeWidth(Number(e.target.value))} className="w-24 accent-indigo-500" />
               <span className="text-xs text-gray-300 w-6">{strokeWidth}</span>
             </>
           )}
@@ -102,10 +104,10 @@ export default function Toolbar({
           {isText && (
             <>
               <span className="text-[11px] text-gray-400">Size</span>
-              <input type="range" min={12} max={72} value={fontSize} onChange={(e) => setFontSize(Number(e.target.value))} className="w-28 accent-indigo-500" />
+              <input type="range" aria-label="Font size" min={12} max={72} value={fontSize} onChange={(e) => setFontSize(Number(e.target.value))} className="w-28 accent-indigo-500" />
               <span className="text-xs text-gray-300 w-8">{fontSize}px</span>
-              <button type="button" onClick={() => toggleStyle('bold')} className={`w-7 h-7 rounded font-bold ${fontStyle.includes('bold') ? 'bg-indigo-600 text-white' : 'text-gray-300 hover:bg-gray-700'}`}>B</button>
-              <button type="button" onClick={() => toggleStyle('italic')} className={`w-7 h-7 rounded italic ${fontStyle.includes('italic') ? 'bg-indigo-600 text-white' : 'text-gray-300 hover:bg-gray-700'}`}>i</button>
+              <button type="button" aria-label="Bold" aria-pressed={fontStyle.includes('bold')} onClick={() => toggleStyle('bold')} className={`w-7 h-7 rounded font-bold ${fontStyle.includes('bold') ? 'bg-indigo-600 text-white' : 'text-gray-300 hover:bg-gray-700'}`}>B</button>
+              <button type="button" aria-label="Italic" aria-pressed={fontStyle.includes('italic')} onClick={() => toggleStyle('italic')} className={`w-7 h-7 rounded italic ${fontStyle.includes('italic') ? 'bg-indigo-600 text-white' : 'text-gray-300 hover:bg-gray-700'}`}>i</button>
               <ColorButton color={strokeColor} onChange={setStrokeColor} title="Text color" />
             </>
           )}
@@ -113,7 +115,7 @@ export default function Toolbar({
             <>
               <span className="text-[11px] text-gray-400">Color</span>
               {STICKY_COLORS.map((c) => (
-                <button key={c} type="button" onClick={() => setStickyColor(c)} className={`w-6 h-6 rounded ${stickyColor === c ? 'ring-2 ring-white' : ''}`} style={{ backgroundColor: c }} />
+                <button key={c} type="button" aria-label={`Note colour ${c}`} aria-pressed={stickyColor === c} onClick={() => setStickyColor(c)} className={`w-6 h-6 rounded ${stickyColor === c ? 'ring-2 ring-white' : ''}`} style={{ backgroundColor: c }} />
               ))}
             </>
           )}
@@ -121,19 +123,21 @@ export default function Toolbar({
             <>
               <span className="text-[11px] text-gray-400">Stamp</span>
               {EMOJI_STAMPS.map((em) => (
-                <button key={em} type="button" onClick={() => setSelectedEmoji(em)} className={`w-8 h-8 rounded text-lg ${selectedEmoji === em ? 'bg-indigo-600' : 'hover:bg-gray-700'}`}>{em}</button>
+                <button key={em} type="button" aria-label={`Stamp ${em}`} aria-pressed={selectedEmoji === em} onClick={() => setSelectedEmoji(em)} className={`w-8 h-8 rounded text-lg ${selectedEmoji === em ? 'bg-indigo-600' : 'hover:bg-gray-700'}`}>{em}</button>
               ))}
             </>
           )}
         </div>
       )}
 
-      <div className="flex items-center gap-1 bg-gray-900/90 backdrop-blur border border-gray-700 rounded-full px-2 py-1.5 shadow-xl">
+      <div role="toolbar" aria-label="Drawing tools" className="flex items-center gap-1 bg-gray-900/90 backdrop-blur border border-gray-700 rounded-full px-2 py-1.5 shadow-xl max-w-[calc(100vw-1rem)] overflow-x-auto">
         {TOOLS.map((t) => (
           <button
             key={t.id}
             type="button"
             title={`${t.name}${t.key ? ` (${t.key})` : ''}`}
+            aria-label={t.name}
+            aria-pressed={tool === t.id}
             onClick={() => setTool(t.id)}
             className={`w-10 h-10 rounded-full flex items-center justify-center text-lg transition-colors ${
               tool === t.id ? 'bg-indigo-600 ring-2 ring-indigo-400 text-white' : 'text-gray-200 hover:bg-gray-700'

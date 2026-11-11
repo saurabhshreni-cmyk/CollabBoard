@@ -11,17 +11,37 @@ import LiveCursors from './LiveCursors.jsx';
 import Minimap from './Minimap.jsx';
 import GridLayer from './GridLayer.jsx';
 import SelectionToolbar from './SelectionToolbar.jsx';
-import { generateId, snap, freehandPath } from '../utils/drawingUtils.js';
+import TextEditorOverlay from './TextEditorOverlay.jsx';
 import {
-  BOARD_FONT, TEXT_LINE_HEIGHT, textMetrics,
+  generateId, snap, freehandPath, appendStrokePoint, roundCoord, STICKY_COLORS,
+} from '../utils/drawingUtils.js';
+import {
   STICKY_WIDTH, STICKY_HEIGHT, STICKY_FONT_SIZE, STICKY_TEXT_COLOR,
 } from '../utils/textConfig.js';
 
 const MIN_SCALE = 0.1;
 const MAX_SCALE = 5;
+const TOP_BAR_HEIGHT = 56;
+// Mouse events arrive far more densely than a stroke needs; skip points
+// closer than this many screen pixels to the previous one.
+const MIN_POINT_SPACING_PX = 1.5;
+const LASER_COLOR = '#ff3b3b';
+const LASER_TTL_MS = 3000;
+// Shapes drawn with an outline, i.e. the ones a line width means something for.
+const OUTLINED_TOOLS = new Set(['pen', 'highlighter', 'rectangle', 'circle', 'diamond', 'triangle', 'arrow']);
+// How often a note being typed is shared with everyone else.
+const LIVE_TEXT_INTERVAL_MS = 150;
+
+function touchDistance(a, b) {
+  return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+}
 
 function getViewSize() {
-  return { width: window.innerWidth, height: window.innerHeight - 56 };
+  // Never zero or negative: a minimised window reports a tiny viewport.
+  return {
+    width: Math.max(1, window.innerWidth),
+    height: Math.max(1, window.innerHeight - TOP_BAR_HEIGHT),
+  };
 }
 
 function isEditableTarget(el) {
@@ -34,7 +54,7 @@ const Canvas = forwardRef(function Canvas(props, ref) {
   const {
     shapes, tool, strokeColor, fillColor, strokeWidth, fontSize, fontStyle,
     stickyColor, selectedEmoji, identity, gridVisible, snapEnabled, backgroundColor,
-    cursors, remoteLasers, addShape, updateShape, deleteShapes,
+    cursors, remoteLasers, addShape, updateShapes, previewShapes, deleteShapes, onToolChange,
     onCursorMove, onLaser, onZoomChange,
   } = props;
 
@@ -56,11 +76,21 @@ const Canvas = forwardRef(function Canvas(props, ref) {
   const nodeRefs = useRef(new Map());
   const isDrawing = useRef(false);
   const startPoint = useRef(null);
-  const panning = useRef(false);
+  const [panning, setPanning] = useState(false);
   const panStart = useRef(null);
+  const pinch = useRef(null);
   const spaceHeld = useRef(false);
-  const textareaRef = useRef(null);
-  const openedAt = useRef(0);
+
+  const updateShape = (shape) => updateShapes([shape]);
+
+  const cancelInProgress = () => {
+    isDrawing.current = false;
+    startPoint.current = null;
+    setCurrentStroke(null);
+    setPreview(null);
+    setArrowStart(null);
+    setArrowEnd(null);
+  };
 
   const registerRef = (id, node) => {
     if (node) nodeRefs.current.set(id, node);
@@ -85,6 +115,29 @@ const Canvas = forwardRef(function Canvas(props, ref) {
   }, []);
 
   useEffect(() => { if (onZoomChange) onZoomChange(stageScale); }, [stageScale, onZoomChange]);
+
+  // A half-finished arrow or shape belongs to the tool that started it.
+  useEffect(() => {
+    cancelInProgress();
+    if (tool !== 'select') setSelectedIds([]);
+  }, [tool]);
+
+  // Drop selected ids whose shapes are gone (deleted by someone else, undone…).
+  useEffect(() => {
+    setSelectedIds((prev) => {
+      if (prev.length === 0) return prev;
+      const alive = new Set(shapes.map((s) => s.id));
+      const kept = prev.filter((id) => alive.has(id));
+      return kept.length === prev.length ? prev : kept;
+    });
+  }, [shapes]);
+
+  // If the note being typed in is deleted by someone else, close the editor
+  // rather than leaving a text box floating over nothing.
+  const editingId = textEditor?.id || null;
+  useEffect(() => {
+    if (editingId && !shapes.some((s) => s.id === editingId)) setTextEditor(null);
+  }, [shapes, editingId]);
 
   useEffect(() => {
     const tr = trRef.current;
@@ -111,7 +164,7 @@ const Canvas = forwardRef(function Canvas(props, ref) {
     if (localLasers.length === 0) return undefined;
     const timer = setInterval(() => {
       const now = Date.now();
-      setLocalLasers((prev) => prev.filter((l) => now - l.ts < 3000));
+      setLocalLasers((prev) => prev.filter((l) => now - l.ts < LASER_TTL_MS));
     }, 500);
     return () => clearInterval(timer);
   }, [localLasers.length]);
@@ -124,7 +177,7 @@ const Canvas = forwardRef(function Canvas(props, ref) {
     // calls selectAll in the same tick, so `tool` would still hold the old
     // value and the selection would be silently dropped.
     selectAll: () => setSelectedIds(shapes.map((s) => s.id)),
-    deselect: () => setSelectedIds([]),
+    deselect: () => { setSelectedIds([]); cancelInProgress(); },
     deleteSelection: () => removeSelected(),
     exportImage: (mimeType = 'image/png') => exportImage(mimeType),
     copyImage: () => copyImage(),
@@ -148,11 +201,25 @@ const Canvas = forwardRef(function Canvas(props, ref) {
 
   const handlePointerDown = (e) => {
     const stage = e.target.getStage();
-    const isMiddle = e.evt && e.evt.button === 1;
-    if (spaceHeld.current || isMiddle) {
-      panning.current = true;
-      panStart.current = { pointer: stage.getPointerPosition(), pos: { ...stagePos } };
+    const touches = e.evt?.touches;
+    if (touches && touches.length >= 2) {
+      // Second finger down: stop whatever one finger was doing and pinch.
+      cancelInProgress();
+      setPanning(false);
+      panStart.current = null;
+      pinch.current = startPinch(touches);
       return;
+    }
+
+    const isMiddle = e.evt && e.evt.button === 1;
+    // With the select tool, dragging empty canvas pans: the only way to move
+    // around on a touch screen, and the familiar one with a mouse.
+    const dragEmptyCanvas = tool === 'select' && e.target === stage;
+    if (spaceHeld.current || isMiddle || dragEmptyCanvas) {
+      setPanning(true);
+      panStart.current = { pointer: stage.getPointerPosition(), pos: { ...stagePos } };
+      if (dragEmptyCanvas) setSelectedIds([]);
+      if (!textEditor) return;
     }
 
     // A click anywhere on the board finishes an open text edit first. The text
@@ -169,17 +236,14 @@ const Canvas = forwardRef(function Canvas(props, ref) {
     const sx = snapW(p.x);
     const sy = snapW(p.y);
 
-    if (tool === 'select') {
-      if (e.target === stage) setSelectedIds([]);
-      return;
-    }
+    if (tool === 'select') return;
 
     if (tool === 'pen' || tool === 'highlighter' || tool === 'laser') {
       isDrawing.current = true;
       setCurrentStroke({
-        points: [p.x, p.y],
-        tool: tool === 'laser' ? 'laser' : tool,
-        color: tool === 'laser' ? '#ff3b3b' : strokeColor,
+        points: [roundCoord(p.x), roundCoord(p.y)],
+        tool,
+        color: tool === 'laser' ? LASER_COLOR : strokeColor,
         strokeWidth: tool === 'laser' ? 4 : strokeWidth,
       });
       return;
@@ -229,8 +293,12 @@ const Canvas = forwardRef(function Canvas(props, ref) {
       openTextEditor({
         id: shape.id, x: sx, y: sy, isSticky: true, value: '',
         fontSize: STICKY_FONT_SIZE, color: STICKY_TEXT_COLOR, fontStyle: 'normal',
-        fillColor: stickyColor,
+        fillColor: stickyColor, original: shape,
       });
+      // One click places one note. Switching to Select means the next click
+      // finishes typing instead of dropping another note, and the note can be
+      // dragged or resized straight away.
+      onToolChange?.('select');
       return;
     }
 
@@ -244,7 +312,13 @@ const Canvas = forwardRef(function Canvas(props, ref) {
 
   const handlePointerMove = (e) => {
     const stage = e.target.getStage();
-    if (panning.current && panStart.current) {
+    const touches = e.evt?.touches;
+    if (pinch.current && touches && touches.length >= 2) {
+      e.evt.preventDefault();
+      applyPinch(touches);
+      return;
+    }
+    if (panStart.current) {
       const pointer = stage.getPointerPosition();
       const dx = pointer.x - panStart.current.pointer.x;
       const dy = pointer.y - panStart.current.pointer.y;
@@ -264,7 +338,11 @@ const Canvas = forwardRef(function Canvas(props, ref) {
     if (!isDrawing.current) return;
 
     if (currentStroke) {
-      setCurrentStroke((prev) => (prev ? { ...prev, points: [...prev.points, p.x, p.y] } : prev));
+      setCurrentStroke((prev) => {
+        if (!prev) return prev;
+        const points = appendStrokePoint(prev.points, p.x, p.y, MIN_POINT_SPACING_PX / stageScale);
+        return points === prev.points ? prev : { ...prev, points };
+      });
     } else if (preview && startPoint.current) {
       const sx = startPoint.current.x;
       const sy = startPoint.current.y;
@@ -281,7 +359,8 @@ const Canvas = forwardRef(function Canvas(props, ref) {
   };
 
   const handlePointerUp = () => {
-    if (panning.current) { panning.current = false; panStart.current = null; return; }
+    pinch.current = null;
+    if (panStart.current) { setPanning(false); panStart.current = null; return; }
     if (!isDrawing.current) return;
     isDrawing.current = false;
 
@@ -316,6 +395,34 @@ const Canvas = forwardRef(function Canvas(props, ref) {
     }
   };
 
+  const touchCenter = (touches) => {
+    const rect = stageRef.current.container().getBoundingClientRect();
+    return {
+      x: (touches[0].clientX + touches[1].clientX) / 2 - rect.left,
+      y: (touches[0].clientY + touches[1].clientY) / 2 - rect.top,
+    };
+  };
+
+  const startPinch = (touches) => ({
+    distance: touchDistance(touches[0], touches[1]),
+    center: touchCenter(touches),
+    scale: stageScale,
+    pos: { ...stagePos },
+  });
+
+  // Two fingers zoom about their midpoint and pan as the midpoint moves.
+  const applyPinch = (touches) => {
+    const start = pinch.current;
+    const center = touchCenter(touches);
+    const distance = touchDistance(touches[0], touches[1]);
+    if (start.distance === 0) return;
+    const scale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, start.scale * (distance / start.distance)));
+    const worldX = (start.center.x - start.pos.x) / start.scale;
+    const worldY = (start.center.y - start.pos.y) / start.scale;
+    setStageScale(scale);
+    setStagePos({ x: center.x - worldX * scale, y: center.y - worldY * scale });
+  };
+
   const handleWheel = (e) => {
     e.evt.preventDefault();
     const stage = stageRef.current;
@@ -339,14 +446,12 @@ const Canvas = forwardRef(function Canvas(props, ref) {
   };
 
   const applyToSelection = (patch) => {
-    selectedIds.forEach((id) => {
-      const shape = shapes.find((s) => s.id === id);
-      if (shape) updateShape({ ...shape, ...patch });
-    });
+    // One call so the whole selection changes, and undoes, as a single step.
+    const selected = new Set(selectedIds);
+    updateShapes(shapes.filter((s) => selected.has(s.id)).map((s) => ({ ...s, ...patch })));
   };
 
   const openTextEditor = (opts) => {
-    openedAt.current = Date.now();
     setTextEditor({
       id: opts.id || null, x: opts.x, y: opts.y, value: opts.value || '',
       isSticky: opts.isSticky || false,
@@ -356,8 +461,27 @@ const Canvas = forwardRef(function Canvas(props, ref) {
       color: opts.color || strokeColor,
       fontStyle: opts.fontStyle || fontStyle,
       fillColor: opts.fillColor || stickyColor,
+      // The shape as it was before editing: what undo goes back to.
+      original: opts.original || null,
+      width: opts.original?.width,
+      height: opts.original?.height,
     });
   };
+
+  // Share text with everyone while it is being typed, not only when editing
+  // ends. Throttled, and sent as a preview so each keystroke is not an undo step.
+  const liveText = textEditor?.id ? textEditor.value : null;
+  const liveTextId = textEditor?.id || null;
+  const shapesRef = useRef(shapes);
+  shapesRef.current = shapes;
+  useEffect(() => {
+    if (liveTextId === null) return undefined;
+    const timer = setTimeout(() => {
+      const shape = shapesRef.current.find((s) => s.id === liveTextId);
+      if (shape && (shape.text || '') !== liveText) previewShapes?.([{ ...shape, text: liveText }]);
+    }, LIVE_TEXT_INTERVAL_MS);
+    return () => clearTimeout(timer);
+  }, [liveText, liveTextId, previewShapes]);
 
   const editExistingText = (shape) => {
     setSelectedIds([]);
@@ -370,30 +494,9 @@ const Canvas = forwardRef(function Canvas(props, ref) {
       fontStyle: shape.fontStyle || 'normal',
       // Show the note being edited in its own colour, not the toolbar's.
       fillColor: shape.fillColor || stickyColor,
+      original: shape,
     });
   };
-
-  // Focus after the browser has finished the click that opened the editor,
-  // otherwise the focus is immediately stolen back by the canvas.
-  useEffect(() => {
-    if (!textEditor) return undefined;
-    const raf = requestAnimationFrame(() => {
-      const el = textareaRef.current;
-      if (!el) return;
-      el.focus({ preventScroll: true });
-      el.setSelectionRange(el.value.length, el.value.length);
-    });
-    return () => cancelAnimationFrame(raf);
-  }, [textEditor?.id, textEditor?.x, textEditor?.y]);
-
-  // Grow a plain text box downwards as lines are added, so the editor always
-  // shows exactly as much as the canvas will render.
-  useEffect(() => {
-    const el = textareaRef.current;
-    if (!el || !textEditor || textEditor.isSticky) return;
-    el.style.height = 'auto';
-    el.style.height = `${el.scrollHeight}px`;
-  }, [textEditor?.value, textEditor?.fontSize, stageScale, textEditor?.isSticky]);
 
   const commitText = () => {
     if (!textEditor) return;
@@ -403,18 +506,25 @@ const Canvas = forwardRef(function Canvas(props, ref) {
       const emptied = value.trim() === '';
       // An empty sticky is still a useful object; an empty text label is not.
       if (emptied && existing.tool === 'text') {
-        deleteShapes([existing.id]);
+        // Undo should bring back the label as it read before editing, not
+        // the emptied live preview.
+        deleteShapes([existing.id], textEditor.original ? [textEditor.original] : undefined);
       } else {
-        updateShape({
+        const finished = {
           ...existing,
           text: value,
           fontSize: textEditor.fontSize,
           ...(existing.tool === 'text'
             ? { color: textEditor.color, fontStyle: textEditor.fontStyle }
             : {}),
-        });
+        };
+        // Undo should restore the text from before editing began, not from
+        // the last live preview.
+        updateShapes([finished], textEditor.original ? [textEditor.original] : undefined);
+        // Leave the note selected so it can be moved or resized immediately.
+        if (tool === 'select') setSelectedIds([existing.id]);
       }
-    } else if (value.trim() !== '') {
+    } else if (!textEditor.id && value.trim() !== '') {
       addShape({
         id: generateId(), tool: 'text', x: textEditor.x, y: textEditor.y, text: value,
         color: textEditor.color, fontSize: textEditor.fontSize,
@@ -430,11 +540,22 @@ const Canvas = forwardRef(function Canvas(props, ref) {
     else commitText();
   };
 
+  // Selection handles are editing UI, not part of the drawing. State updates
+  // are asynchronous, so hide the transformer node directly for the capture.
+  const withoutSelectionHandles = (capture) => {
+    const tr = trRef.current;
+    tr?.hide();
+    try {
+      return capture();
+    } finally {
+      tr?.show();
+    }
+  };
+
   const exportImage = (mimeType) => {
     const stage = stageRef.current;
     if (!stage) return null;
-    setSelectedIds([]);
-    const uri = stage.toDataURL({ pixelRatio: 2, mimeType });
+    const uri = withoutSelectionHandles(() => stage.toDataURL({ pixelRatio: 2, mimeType }));
     const ext = mimeType === 'image/jpeg' ? 'jpg' : 'png';
     const link = document.createElement('a');
     link.download = `collabboard.${ext}`;
@@ -448,9 +569,10 @@ const Canvas = forwardRef(function Canvas(props, ref) {
   const copyImage = async () => {
     const stage = stageRef.current;
     if (!stage || !navigator.clipboard || typeof ClipboardItem === 'undefined') return false;
-    setSelectedIds([]);
+    const canvas = withoutSelectionHandles(() => stage.toCanvas({ pixelRatio: 2 }));
     return new Promise((resolve) => {
-      stage.toCanvas({ pixelRatio: 2 }).toBlob(async (blob) => {
+      canvas.toBlob(async (blob) => {
+        if (!blob) { resolve(false); return; }
         try {
           await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
           resolve(true);
@@ -466,11 +588,17 @@ const Canvas = forwardRef(function Canvas(props, ref) {
   const visW = view.width / stageScale;
   const visH = view.height / stageScale;
 
-  const selectable = tool === 'select';
-  const cursorStyle = panning.current ? 'grabbing' : tool === 'select' ? 'default' : tool === 'text' ? 'text' : 'crosshair';
+  const selectedIdSet = new Set(selectedIds);
+  const selectedShapes = shapes.filter((s) => selectedIdSet.has(s.id));
+  // A note's colour is its background, not an outline.
+  const onlyNotesSelected = selectedShapes.length > 0 && selectedShapes.every((s) => s.tool === 'stickyNote');
+
+  const cursorStyle = panning ? 'grabbing' : tool === 'select' ? 'default' : tool === 'text' ? 'text' : 'crosshair';
 
   return (
-    <div className="relative flex-1 overflow-hidden h-full" style={{ background: backgroundColor }}>
+    // touch-action none: the canvas handles its own panning and pinch zoom,
+    // so the browser must not scroll or zoom the page underneath it.
+    <div className="relative flex-1 overflow-hidden h-full" style={{ background: backgroundColor, touchAction: 'none' }}>
       <Stage
         ref={stageRef}
         width={view.width}
@@ -485,6 +613,8 @@ const Canvas = forwardRef(function Canvas(props, ref) {
         onTouchStart={handlePointerDown}
         onTouchMove={handlePointerMove}
         onTouchEnd={handlePointerUp}
+        onTouchCancel={handlePointerUp}
+        onMouseLeave={handlePointerUp}
         onWheel={handleWheel}
         style={{ cursor: cursorStyle }}
       >
@@ -574,64 +704,25 @@ const Canvas = forwardRef(function Canvas(props, ref) {
         <SelectionToolbar
           x={selBox.x}
           y={selBox.y}
-          onColor={(c) => applyToSelection({ color: c })}
+          colors={onlyNotesSelected ? STICKY_COLORS : undefined}
+          showStroke={selectedShapes.some((s) => OUTLINED_TOOLS.has(s.tool))}
+          onColor={(c) => applyToSelection(onlyNotesSelected ? { fillColor: c } : { color: c })}
           onStroke={(w) => applyToSelection({ strokeWidth: w })}
           onDelete={removeSelected}
         />
       )}
 
-      {textEditor && (() => {
-        const m = textMetrics(textEditor.isSticky);
-        const size = textEditor.fontSize || fontSize;
-        return (
-          <textarea
-            ref={textareaRef}
-            value={textEditor.value}
-            onChange={(e) => setTextEditor((prev) => ({ ...prev, value: e.target.value }))}
-            onBlur={() => {
-              // Ignore the spurious blur that can fire in the same tick the
-              // editor opened; a real click-away always comes later.
-              if (Date.now() - openedAt.current < 250) {
-                requestAnimationFrame(() => textareaRef.current?.focus({ preventScroll: true }));
-                return;
-              }
-              commitText();
-            }}
-            onKeyDown={(e) => {
-              // Enter makes a new line. Escape, Ctrl/Cmd+Enter or clicking away
-              // finishes editing — the same convention Excalidraw uses.
-              e.stopPropagation();
-              if (e.key === 'Escape') { e.preventDefault(); cancelText(); }
-              if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); commitText(); }
-            }}
-            onWheel={(e) => e.stopPropagation()}
-            spellCheck={false}
-            className="absolute z-30 outline-none resize-none overflow-hidden"
-            style={{
-              left: (textEditor.x - m.padding) * stageScale + stagePos.x,
-              top: (textEditor.y - m.padding) * stageScale + stagePos.y,
-              width: m.width * stageScale,
-              minHeight: (size * TEXT_LINE_HEIGHT + m.padding * 2) * stageScale,
-              height: textEditor.isSticky ? STICKY_HEIGHT * stageScale : 'auto',
-              padding: m.padding * stageScale,
-              color: textEditor.isSticky ? STICKY_TEXT_COLOR : textEditor.color,
-              background: textEditor.isSticky ? textEditor.fillColor : 'transparent',
-              caretColor: textEditor.isSticky ? STICKY_TEXT_COLOR : textEditor.color,
-              fontFamily: BOARD_FONT,
-              fontSize: size * stageScale,
-              fontWeight: textEditor.fontStyle.includes('bold') ? 'bold' : 'normal',
-              fontStyle: textEditor.fontStyle.includes('italic') ? 'italic' : 'normal',
-              lineHeight: TEXT_LINE_HEIGHT,
-              border: `1px dashed ${textEditor.isSticky ? 'rgba(0,0,0,.35)' : 'rgba(129,140,248,.9)'}`,
-              borderRadius: textEditor.isSticky ? 10 : 4,
-              boxSizing: 'border-box',
-              whiteSpace: 'pre-wrap',
-              wordBreak: 'break-word',
-            }}
-            placeholder="Type…  (Esc or click away when done)"
-          />
-        );
-      })()}
+      {textEditor && (
+        <TextEditorOverlay
+          editor={textEditor}
+          fallbackFontSize={fontSize}
+          stageScale={stageScale}
+          stagePos={stagePos}
+          onChange={(value) => setTextEditor((prev) => (prev ? { ...prev, value } : prev))}
+          onCommit={commitText}
+          onCancel={cancelText}
+        />
+      )}
 
       <Minimap shapes={shapes} stagePos={stagePos} stageScale={stageScale} viewWidth={view.width} viewHeight={view.height} />
     </div>

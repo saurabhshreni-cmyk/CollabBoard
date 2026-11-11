@@ -1,6 +1,9 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
   GRID_SIZE,
+  MAX_STROKE_POINTS,
+  appendStrokePoint,
+  roundCoord,
   generateId,
   snap,
   snapPoint,
@@ -155,5 +158,88 @@ describe('palettes', () => {
     expect(STICKY_COLORS).toHaveLength(5);
     expect(EMOJI_STAMPS).toHaveLength(6);
     STICKY_COLORS.forEach((c) => expect(c).toMatch(/^#[0-9A-Fa-f]{6}$/));
+  });
+});
+
+describe('generateId without crypto.randomUUID', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  // Plain-http LAN addresses are not a secure context, so randomUUID is absent.
+  it('still produces unique ids from getRandomValues', () => {
+    const getRandomValues = (bytes) => {
+      for (let i = 0; i < bytes.length; i += 1) bytes[i] = Math.floor(Math.random() * 256);
+      return bytes;
+    };
+    vi.stubGlobal('crypto', { getRandomValues });
+
+    const a = generateId();
+    const b = generateId();
+
+    expect(a).toMatch(/^[0-9a-f]{32}$/);
+    expect(a).not.toBe(b);
+  });
+
+  it('works even with no crypto at all', () => {
+    vi.stubGlobal('crypto', undefined);
+
+    expect(generateId()).toMatch(/^[0-9a-f]{32}$/);
+  });
+});
+
+describe('appendStrokePoint', () => {
+  it('adds a rounded point and never mutates the input', () => {
+    const before = [0, 0];
+    const after = appendStrokePoint(before, 10.12345, 20.6789);
+
+    expect(after).toEqual([0, 0, 10.12, 20.68]);
+    expect(before).toEqual([0, 0]);
+  });
+
+  it('skips points closer than the minimum spacing', () => {
+    const points = [0, 0];
+
+    expect(appendStrokePoint(points, 0.5, 0.5, 2)).toBe(points);
+    expect(appendStrokePoint(points, 3, 0, 2)).toHaveLength(4);
+  });
+
+  it('stops growing at the maximum stroke length', () => {
+    const full = new Array(MAX_STROKE_POINTS * 2).fill(0);
+
+    expect(appendStrokePoint(full, 500, 500)).toBe(full);
+  });
+
+  it('a maximum-length stroke stays well inside the server message limit', () => {
+    let points = [];
+    for (let i = 0; i < MAX_STROKE_POINTS; i += 1) {
+      points = appendStrokePoint(points, -99999.99 - i, 99999.99 + i);
+    }
+    const bytes = JSON.stringify({ type: 'draw', shape: { id: 'x'.repeat(36), tool: 'pen', points } }).length;
+
+    expect(points).toHaveLength(MAX_STROKE_POINTS * 2);
+    expect(bytes).toBeLessThan(200 * 1024); // server accepts 256 KB
+  });
+});
+
+describe('roundCoord', () => {
+  it('keeps two decimals', () => {
+    expect(roundCoord(1.005)).toBeCloseTo(1.0, 1);
+    expect(roundCoord(12.3456)).toBe(12.35);
+    expect(roundCoord(-7.891)).toBe(-7.89);
+  });
+});
+
+describe('parseSnapshot hardening', () => {
+  it('drops entries that are not shapes', () => {
+    expect(parseSnapshot('[null, 5, "x", {"tool":"pen"}, {"id":"ok","tool":"pen"}]')).toEqual([
+      { id: 'ok', tool: 'pen' },
+    ]);
+  });
+});
+
+describe('shapesBounds with scaled strokes', () => {
+  it('accounts for a resized pen stroke', () => {
+    const bounds = shapesBounds([{ id: 'a', tool: 'pen', points: [0, 0, 10, 10], x: 5, y: 5, scaleX: 2, scaleY: 3 }]);
+
+    expect(bounds).toEqual({ minX: 5, minY: 5, maxX: 25, maxY: 35 });
   });
 });

@@ -30,7 +30,7 @@ export default function Minimap({ shapes, stagePos, stageScale, viewWidth, viewH
   const vp = toMM(visLeft, visTop);
 
   return (
-    <div className="absolute bottom-4 right-4 z-20 rounded-lg overflow-hidden border border-gray-700 shadow-lg">
+    <div aria-hidden="true" className="absolute bottom-4 right-4 z-20 rounded-lg overflow-hidden border border-gray-700 shadow-lg hidden sm:block pointer-events-none">
       <svg width={MM_W} height={MM_H} style={{ background: '#15152b', display: 'block' }}>
         {shapes.map((s, i) => {
           if (s.tool === 'stickyNote' || s.tool === 'rectangle' || s.tool === 'circle' ||
@@ -53,7 +53,10 @@ export default function Minimap({ shapes, stagePos, stageScale, viewWidth, viewH
           if ((s.tool === 'pen' || s.tool === 'highlighter' || s.tool === 'arrow') && s.points) {
             const pts = [];
             for (let j = 0; j < s.points.length; j += 2) {
-              const p = toMM((s.points[j] || 0) + (s.x || 0), (s.points[j + 1] || 0) + (s.y || 0));
+              const p = toMM(
+                (s.points[j] || 0) * (s.scaleX ?? 1) + (s.x || 0),
+                (s.points[j + 1] || 0) * (s.scaleY ?? 1) + (s.y || 0)
+              );
               pts.push(`${p.x},${p.y}`);
             }
             return (

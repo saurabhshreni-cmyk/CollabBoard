@@ -52,7 +52,7 @@ export default function ShareDialog({ open, onClose, roomCode }) {
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center px-4">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative w-full max-w-lg bg-gray-900 border border-gray-700 rounded-2xl shadow-2xl p-6">
+      <div role="dialog" aria-modal="true" aria-label="Invite people to this board" className="relative w-full max-w-lg bg-gray-900 border border-gray-700 rounded-2xl shadow-2xl p-6">
         <div className="flex items-start justify-between mb-4">
           <div>
             <h2 className="text-white text-lg font-semibold">Invite people to this board</h2>
@@ -64,15 +64,17 @@ export default function ShareDialog({ open, onClose, roomCode }) {
             type="button"
             onClick={onClose}
             aria-label="Close"
+            autoFocus
             className="text-gray-400 hover:text-white text-2xl leading-none -mt-1"
           >
             ×
           </button>
         </div>
 
-        <label className="block text-xs text-gray-400 mb-2">This board&rsquo;s link</label>
+        <label htmlFor="cb-share-link" className="block text-xs text-gray-400 mb-2">This board&rsquo;s link</label>
         <div className="flex gap-2 mb-5">
           <input
+            id="cb-share-link"
             readOnly
             value={currentUrl}
             onFocus={(e) => e.target.select()}

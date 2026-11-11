@@ -2,99 +2,104 @@ import { describe, it, expect } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import useHistory from './useHistory.js';
 
-const shape = (id) => ({ id, tool: 'pen', x: 0, y: 0 });
+const entry = (name) => ({
+  redo: [{ type: 'draw', shape: { id: name } }],
+  undo: [{ type: 'delete', shapeIds: [name] }],
+});
 
 describe('useHistory', () => {
   it('starts empty with nothing to undo or redo', () => {
     const { result } = renderHook(() => useHistory());
+
     expect(result.current.canUndo).toBe(false);
     expect(result.current.canRedo).toBe(false);
+    expect(result.current.undo()).toBeNull();
+    expect(result.current.redo()).toBeNull();
   });
 
-  it('enables undo after a push', () => {
+  it('enables undo after an action is recorded', () => {
     const { result } = renderHook(() => useHistory());
-    act(() => result.current.push([shape('a')]));
+
+    act(() => result.current.record(entry('a')));
+
     expect(result.current.canUndo).toBe(true);
     expect(result.current.canRedo).toBe(false);
   });
 
-  it('undo returns the previous snapshot and redo returns to the newer one', () => {
+  it('undo returns the reversing events and redo the original ones', () => {
     const { result } = renderHook(() => useHistory());
-    act(() => result.current.push([shape('a')]));
-    act(() => result.current.push([shape('a'), shape('b')]));
+    act(() => result.current.record(entry('a')));
 
     let undone;
     act(() => { undone = result.current.undo(); });
-    expect(undone).toHaveLength(1);
+    expect(undone).toEqual([{ type: 'delete', shapeIds: ['a'] }]);
+    expect(result.current.canUndo).toBe(false);
     expect(result.current.canRedo).toBe(true);
 
     let redone;
     act(() => { redone = result.current.redo(); });
-    expect(redone).toHaveLength(2);
+    expect(redone).toEqual([{ type: 'draw', shape: { id: 'a' } }]);
     expect(result.current.canRedo).toBe(false);
   });
 
-  it('returns null when there is nothing left to undo or redo', () => {
+  it('walks back through several actions newest first', () => {
     const { result } = renderHook(() => useHistory());
-    let out;
-    act(() => { out = result.current.undo(); });
-    expect(out).toBeNull();
-    act(() => { out = result.current.redo(); });
-    expect(out).toBeNull();
+    act(() => result.current.record(entry('a')));
+    act(() => result.current.record(entry('b')));
+
+    let first;
+    let second;
+    act(() => { first = result.current.undo(); });
+    act(() => { second = result.current.undo(); });
+
+    expect(first[0].shapeIds).toEqual(['b']);
+    expect(second[0].shapeIds).toEqual(['a']);
   });
 
-  it('drops the redo branch once new work is pushed', () => {
+  it('a new action discards anything that had been undone', () => {
     const { result } = renderHook(() => useHistory());
-    act(() => result.current.push([shape('a')]));
-    act(() => result.current.push([shape('a'), shape('b')]));
+    act(() => result.current.record(entry('a')));
+    act(() => result.current.record(entry('b')));
     act(() => { result.current.undo(); });
-    expect(result.current.canRedo).toBe(true);
 
-    act(() => result.current.push([shape('a'), shape('c')]));
+    act(() => result.current.record(entry('c')));
+
     expect(result.current.canRedo).toBe(false);
+    let undone;
+    act(() => { undone = result.current.undo(); });
+    expect(undone[0].shapeIds).toEqual(['c']);
   });
 
-  it('reset clears the stack to a single entry', () => {
+  it('ignores empty entries', () => {
     const { result } = renderHook(() => useHistory());
-    act(() => result.current.push([shape('a')]));
-    act(() => result.current.push([shape('a'), shape('b')]));
 
-    act(() => result.current.reset([shape('z')]));
+    act(() => result.current.record({ undo: [], redo: [] }));
+    act(() => result.current.record(null));
+
+    expect(result.current.canUndo).toBe(false);
+  });
+
+  it('keeps only the most recent 100 actions', () => {
+    const { result } = renderHook(() => useHistory());
+    act(() => {
+      for (let i = 0; i < 130; i += 1) result.current.record(entry(`s${i}`));
+    });
+
+    let undos = 0;
+    act(() => {
+      while (result.current.undo()) undos += 1;
+    });
+
+    expect(undos).toBe(100);
+  });
+
+  it('reset forgets everything', () => {
+    const { result } = renderHook(() => useHistory());
+    act(() => result.current.record(entry('a')));
+
+    act(() => result.current.reset());
+
     expect(result.current.canUndo).toBe(false);
     expect(result.current.canRedo).toBe(false);
-  });
-
-  it('caps history at 50 entries', () => {
-    const { result } = renderHook(() => useHistory());
-    act(() => {
-      for (let i = 0; i < 80; i++) result.current.push([shape(`s${i}`)]);
-    });
-    let steps = 0;
-    act(() => {
-      while (result.current.undo() !== null && steps < 200) steps += 1;
-    });
-    expect(steps).toBe(49);
-  });
-
-  it('snapshots are cloned so later mutations do not corrupt history', () => {
-    const { result } = renderHook(() => useHistory());
-    const live = [shape('a')];
-    act(() => result.current.push(live));
-    act(() => result.current.push([...live, shape('b')]));
-
-    live[0].x = 9999;
-
-    let undone;
-    act(() => { undone = result.current.undo(); });
-    expect(undone[0].x).toBe(0);
-  });
-
-  it('treats non-array input as an empty snapshot', () => {
-    const { result } = renderHook(() => useHistory());
-    act(() => result.current.push([shape('a')]));
-    act(() => result.current.push(null));
-    let undone;
-    act(() => { undone = result.current.undo(); });
-    expect(undone).toEqual([{ id: 'a', tool: 'pen', x: 0, y: 0 }]);
   });
 });

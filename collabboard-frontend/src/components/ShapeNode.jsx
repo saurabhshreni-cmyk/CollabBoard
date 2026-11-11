@@ -23,12 +23,19 @@ export default function ShapeNode({
   const isSelectable = clickMode === 'select';
   const commonRef = (node) => registerRef(shape.id, node);
 
+  // Erase on press, and on drag-over while the button (or finger) is down, so
+  // the eraser can be swept across the board instead of clicked shape by shape.
+  const handlePress = (e) => {
+    if (clickMode !== 'erase') return;
+    e.cancelBubble = true;
+    onErase(shape.id);
+  };
+
+  const handleEnter = (e) => {
+    if (clickMode === 'erase' && e.evt?.buttons === 1) onErase(shape.id);
+  };
+
   const handleClick = (e) => {
-    if (clickMode === 'erase') {
-      e.cancelBubble = true;
-      onErase(shape.id);
-      return;
-    }
     if (clickMode === 'select') {
       e.cancelBubble = true;
       onSelect(shape.id, e.evt?.shiftKey || false);
@@ -63,6 +70,41 @@ export default function ShapeNode({
     onChange(next);
   };
 
+  // Freehand strokes and arrows are defined by their points, so there is no
+  // width/height to bake a resize into. Keep the scale on the shape instead.
+  const handlePointShapeTransformEnd = (e) => {
+    const node = e.target;
+    onChange({
+      ...shape,
+      x: node.x(),
+      y: node.y(),
+      rotation: node.rotation(),
+      scaleX: node.scaleX(),
+      scaleY: node.scaleY(),
+    });
+  };
+
+  const pressProps = {
+    onMouseDown: handlePress,
+    onTouchStart: handlePress,
+    onMouseEnter: handleEnter,
+  };
+
+  const pointShapeProps = {
+    ref: commonRef,
+    x: shape.x || 0,
+    y: shape.y || 0,
+    rotation: shape.rotation || 0,
+    scaleX: shape.scaleX ?? 1,
+    scaleY: shape.scaleY ?? 1,
+    draggable: isSelectable,
+    onClick: handleClick,
+    onTap: handleClick,
+    onDragEnd: handleDragEnd,
+    onTransformEnd: handlePointShapeTransformEnd,
+    ...pressProps,
+  };
+
   const groupProps = {
     x: shape.x || 0,
     y: shape.y || 0,
@@ -73,6 +115,7 @@ export default function ShapeNode({
     onDragEnd: handleDragEnd,
     onTransformEnd: handleTransformEnd,
     ref: commonRef,
+    ...pressProps,
   };
 
   const stroke = shape.color || '#ffffff';
@@ -87,18 +130,10 @@ export default function ShapeNode({
       const data = freehandPath(shape.points, shape.tool, strokeWidth);
       return (
         <Path
-          ref={commonRef}
+          {...pointShapeProps}
           data={data}
-          x={shape.x || 0}
-          y={shape.y || 0}
-          rotation={shape.rotation || 0}
           fill={stroke}
           opacity={shape.opacity != null ? shape.opacity : shape.tool === 'highlighter' ? 0.4 : 1}
-          draggable={isSelectable}
-          onClick={handleClick}
-          onTap={handleClick}
-          onDragEnd={handleDragEnd}
-          listening
         />
       );
     }
@@ -106,11 +141,8 @@ export default function ShapeNode({
     case 'arrow':
       return (
         <Arrow
-          ref={commonRef}
+          {...pointShapeProps}
           points={shape.points || [0, 0, 0, 0]}
-          x={shape.x || 0}
-          y={shape.y || 0}
-          rotation={shape.rotation || 0}
           stroke={stroke}
           fill={stroke}
           strokeWidth={strokeWidth}
@@ -118,10 +150,7 @@ export default function ShapeNode({
           pointerWidth={10}
           lineCap="round"
           lineJoin="round"
-          draggable={isSelectable}
-          onClick={handleClick}
-          onTap={handleClick}
-          onDragEnd={handleDragEnd}
+          hitStrokeWidth={Math.max(12, strokeWidth)}
         />
       );
 
