@@ -1,107 +1,204 @@
+<div align="center">
+
 # 🎨 CollabBoard
 
-[![CI](https://github.com/saurabhshreni-cmyk/CollabBoard/actions/workflows/ci.yml/badge.svg)](https://github.com/saurabhshreni-cmyk/CollabBoard/actions/workflows/ci.yml) ![Java](https://img.shields.io/badge/Java-17-orange) ![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.5-brightgreen) ![React](https://img.shields.io/badge/React-18-blue) ![Vite](https://img.shields.io/badge/Vite-8-purple) ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-blue)
+### A real-time collaborative whiteboard — draw together on an infinite canvas
 
-### 🔗 Live demo: **[collabboard-3vp6.onrender.com](https://collabboard-3vp6.onrender.com)**
+Create a room, share the link, and sketch, plan and brainstorm with anyone, live.<br/>
+No sign-up. No install. Just a link.
 
-> Hosted on a free plan, so the first visit after a quiet spell takes up to a minute while the server wakes up.
+<br/>
 
-A full-stack, real-time collaborative whiteboard. Create a room, share the link, and draw together live on an infinite canvas — freehand pen, highlighter, laser pointer, shapes, arrows, text, sticky notes, emoji stamps, live cursors, undo/redo, and image export. Boards persist to PostgreSQL, so anyone joining later sees the current state.
+[![Live Demo](https://img.shields.io/badge/▶_Live_Demo-collabboard--3vp6.onrender.com-6366F1?style=for-the-badge)](https://collabboard-3vp6.onrender.com)
 
-See [FEATURES.md](FEATURES.md) for the complete feature list.
+[![CI](https://github.com/saurabhshreni-cmyk/CollabBoard/actions/workflows/ci.yml/badge.svg)](https://github.com/saurabhshreni-cmyk/CollabBoard/actions/workflows/ci.yml)
+![Tests](https://img.shields.io/badge/tests-240_passing-22c55e)
+![License](https://img.shields.io/badge/license-MIT-blue)
+
+![Java](https://img.shields.io/badge/Java-17-ED8B00?logo=openjdk&logoColor=white)
+![Spring Boot](https://img.shields.io/badge/Spring_Boot-3.5-6DB33F?logo=springboot&logoColor=white)
+![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black)
+![Vite](https://img.shields.io/badge/Vite-8-646CFF?logo=vite&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)
+![WebSocket](https://img.shields.io/badge/WebSocket-STOMP-010101)
+![Docker](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white)
+
+<br/>
+
+<a href="https://collabboard-3vp6.onrender.com">
+  <img src="docs/screenshots/board.png" alt="A CollabBoard board with a flow diagram, sticky notes, hand-drawn strokes and emoji stamps" width="900"/>
+</a>
+
+<sub>The live demo runs on a free plan, so the first visit after a quiet spell takes up to a minute while the server wakes up.</sub>
+
+<br/><br/>
+
+[Features](#-features) ·
+[How it works](#-how-it-works) ·
+[Engineering highlights](#-engineering-highlights) ·
+[Quick start](#-quick-start) ·
+[API](#-api-reference) ·
+[Deploy](#-deploying)
+
+</div>
 
 ---
 
-## 🐳 Quick Start (Docker — one command)
+## ✨ Features
 
-The entire stack (PostgreSQL + Spring Boot backend + React frontend) runs with a single command. Requires only Docker Desktop.
+<table>
+<tr>
+<td width="33%" valign="top">
 
-```bash
-docker compose up --build
+### ✏️ Draw
+
+- Smooth freehand **pen** and **highlighter**
+- **Shapes** — rectangle, circle, diamond, triangle
+- **Arrows**, **text** and **sticky notes**
+- **Emoji stamps** 👍 ❤️ 🔥 ✅ ❓ ⭐
+- **Laser pointer** that fades away
+- **Eraser** — click or sweep
+
+</td>
+<td width="33%" valign="top">
+
+### 🤝 Collaborate
+
+- Every change appears **live** for everyone
+- **Live cursors** with names and tools
+- See text **as it is typed**
+- **Who's online** roster
+- Works across **tabs, devices and networks**
+- **Keeps working offline**, syncs on return
+
+</td>
+<td width="33%" valign="top">
+
+### 🧭 Navigate & edit
+
+- **Infinite canvas** — zoom 10%–500%, pan
+- **Touch**: drag to pan, pinch to zoom
+- Select, **move, resize, rotate**, recolour
+- **Undo / redo** that only undoes *your* work
+- **Minimap**, grid and snap-to-grid
+- **Export** to PNG, JPEG or clipboard
+
+</td>
+</tr>
+</table>
+
+<div align="center">
+  <img src="docs/screenshots/landing.png" alt="The CollabBoard landing page: create a room or join one with a code" width="760"/>
+</div>
+
+The full list is in [FEATURES.md](FEATURES.md).
+
+---
+
+## 🧩 How it works
+
+> **The browser draws immediately and tells the server; the server saves the change and tells everyone else.**
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant A as Alice's browser
+    participant S as Spring Boot server
+    participant D as PostgreSQL
+    participant B as Bob's browser
+
+    A->>A: Draw the shape on screen right away
+    A->>S: STOMP  /app/room/{code}/draw
+    S->>S: Validate and sanitise the event
+    S->>D: Lock the room row, update the snapshot, commit
+    S-->>A: Broadcast  /topic/room/{code}
+    S-->>B: Broadcast  /topic/room/{code}
+    A->>A: Own echo → mark as confirmed
+    B->>B: Apply the event → shape appears
 ```
 
-Then open **http://localhost:5173**. The backend is on `http://localhost:8080` (health check at `/api/health`) and PostgreSQL on `5432`. Data persists in the `collabboard_pgdata` volume. Stop with `docker compose down` (add `-v` to also wipe the database).
+### Architecture
 
----
+```mermaid
+flowchart LR
+    subgraph Browser["🌐 Browser — React 18 + Konva"]
+        UI["Canvas · Toolbar · Top bar"]
+        Board["useBoard<br/>shapes · undo/redo · resync"]
+        WS["useWebSocket<br/>STOMP client · offline queue"]
+        UI --> Board --> WS
+    end
 
-## ✨ Highlights
+    subgraph Server["☕ Spring Boot 3.5"]
+        REST["RoomController<br/>REST API"]
+        RT["WhiteboardController<br/>STOMP handlers"]
+        San["BoardEventSanitizer"]
+        Svc["RoomService"]
+        Pres["PresenceService"]
+        Broker(["Message broker<br/>/topic/room/*"])
+        RT --> San --> Svc
+        RT --> Pres
+        REST --> Svc
+        RT --> Broker
+    end
 
-- **Infinite canvas** — wheel or pinch zoom (0.1×–5×), drag / space-drag / two-finger pan, minimap, dot grid with optional snapping
-- **Drawing tools** — pen (pressure-style via `perfect-freehand`), highlighter, laser pointer, rectangle, circle, diamond, triangle, arrow, text, sticky notes, emoji stamps, eraser
-- **Selection & editing** — Konva transformer with resize/rotate, multi-select, floating selection toolbar, per-person undo/redo (100 steps) that never rolls back a collaborator's work
-- **Real-time collaboration** — STOMP-over-SockJS sync of every shape, live cursors with names and tool icons, presence roster, auto-reconnect with status indicator
-- **Survives a flaky connection** — changes made offline are queued and sent on reconnect, then the board resyncs with the server
-- **Persistence** — the full board is stored as a JSON snapshot per room, so late joiners see everything
-- **Export** — PNG, JPEG (2× pixel ratio), or copy straight to the clipboard
-- **No login** — shareable 6-character room codes
+    DB[("🐘 PostgreSQL<br/>rooms")]
 
----
-
-## 🧰 Tech Stack
-
-| Layer      | Technology                                                                                                                  |
-| ---------- | --------------------------------------------------------------------------------------------------------------------------- |
-| Backend    | Java 17, Spring Boot 3.5, Spring WebSocket (STOMP), Spring Data JPA, Lombok                                                   |
-| Database   | PostgreSQL 16 (H2 in-memory for tests)                                                                                        |
-| Build      | Maven, Docker (multi-stage)                                                                                                   |
-| Frontend   | React 18, Vite 8, react-konva + konva, perfect-freehand, @stomp/stompjs, sockjs-client, react-router 7, TailwindCSS            |
-| Tests      | JUnit 5 + Spring Boot Test + Mockito, incl. live STOMP integration tests (backend); Vitest + Testing Library, ESLint (frontend) |
-| Deploy     | Render — one Docker service serving UI + API, plus PostgreSQL (Vercel frontend optional)                                       |
-
----
-
-## 📦 Project Structure
-
-```
-CollabBoard/
-├── collabboard-backend/            # Spring Boot API + WebSocket server
-│   ├── src/main/java/com/collabboard/
-│   │   ├── config/                 # WebSocket, CORS, rate limit, STOMP disconnect listener
-│   │   ├── controller/             # REST (rooms, health) + STOMP (whiteboard)
-│   │   ├── dto/                    # Draw event, shape, room, presence DTOs
-│   │   ├── model/                  # Room JPA entity
-│   │   ├── repository/             # Spring Data repository
-│   │   └── service/                # Room, presence, event sanitizer, cleanup task
-│   ├── src/test/java/com/collabboard/   # JUnit 5 tests (H2-backed)
-│   ├── Dockerfile
-│   └── pom.xml
-├── collabboard-frontend/           # React + Vite client
-│   ├── src/
-│   │   ├── api/                    # fetch-based room API
-│   │   ├── components/             # Landing, room, canvas, toolbars, minimap, cursors…
-│   │   ├── context/                # Toast provider
-│   │   ├── hooks/                  # useBoard, useWebSocket, useHistory, useUserIdentity…
-│   │   └── utils/                  # board operations, colour + drawing helpers (+ unit tests)
-│   ├── Dockerfile / nginx.conf
-│   └── package.json
-├── .github/workflows/ci.yml        # Lint, test, audit and build images on every push
-├── Dockerfile                      # Single image: frontend baked into the server (what Render deploys)
-├── render.yaml                     # Render blueprint: app + database
-└── docker-compose.yml              # Local stack: db + backend + frontend as separate services
+    Board -- "HTTP: create / load a room" --> REST
+    WS <-- "WebSocket: live events" --> RT
+    Broker -. "broadcast" .-> WS
+    Svc --> DB
 ```
 
----
+Two channels, each for what it is good at:
 
-## ✅ Prerequisites (non-Docker setup)
-
-- **Java 17+** (`java -version`)
-- **Node.js 20.19+ or 22.12+** and npm (`node -v`)
-- **PostgreSQL 14+** running locally — *not needed for the quick start below*
-
-Maven is **not** required: the repo ships the Maven wrapper (`mvnw` / `mvnw.cmd`),
-which downloads the pinned Maven version on first use.
+| Channel | Used for | Why |
+| ------- | -------- | --- |
+| **REST over HTTP** | Creating and loading a room | One question, one answer. Also how a client recovers after reconnecting |
+| **STOMP over WebSocket** | Drawing, cursors, presence | The server must push to every browser the instant something changes |
 
 ---
 
-## ⚡ Quick start (no database setup)
+## 🏆 Engineering highlights
 
-The `dev` profile runs the backend against an in-memory H2 database, so you can
-be drawing in about a minute with nothing else installed.
+The drawing is the easy part. The hard part is keeping everyone's board **identical** when people act at the same moment or lose their connection.
+
+| Problem | What goes wrong | How it is solved |
+| ------- | --------------- | ---------------- |
+| **Lost updates** | Two people draw at once; one stroke silently disappears from the saved board | Every change runs in a transaction holding a **database row lock** (`SELECT … FOR UPDATE`) |
+| **Out-of-order events** | A "draw" then "delete" is processed as "delete" then "draw", leaving a zombie shape | Each client's messages are handled **strictly in the order sent** |
+| **Diverging clients** | Two people edit the same shape and end up looking at different boards | Each tab tracks its **unconfirmed edits** and ignores stale incoming ones until the server confirms |
+| **Dropped connections** | Work done offline is lost; missed changes never arrive | Changes are **queued and flushed in order**, then the board **resyncs** from the server |
+| **Undo wipes others' work** | Undoing your stroke erases what a teammate drew since | Undo is **per person and operation-based** — it reverses only your own action |
+| **Two tabs, one person** | Tabs ignore each other; closing one marks you offline | A per-tab **client id** for echoes, and presence tracked **per connection** |
+| **Large strokes kill the socket** | A long line exceeds the server's default 8 KB frame and drops the connection | Frame limit raised, strokes **thinned and capped** on the client |
+| **Untrusted input** | Anyone with a room code can send arbitrary JSON to every other browser | Every event is **rebuilt from an allowlist** with size and range limits |
+
+Each of these was reproduced with a failing test before it was fixed — including tests that connect **real STOMP clients to a live server**.
+
+---
+
+## 🧰 Tech stack
+
+| Layer | Technology |
+| ----- | ---------- |
+| **Backend** | Java 17 · Spring Boot 3.5 · Spring WebSocket (STOMP + SockJS) · Spring Data JPA · Lombok |
+| **Database** | PostgreSQL 16 (H2 in memory for development and tests) |
+| **Frontend** | React 18 · Vite 8 · Konva + react-konva · perfect-freehand · @stomp/stompjs · React Router 7 · Tailwind CSS |
+| **Testing** | JUnit 5 · AssertJ · Mockito · Spring Boot Test · Vitest · Testing Library · ESLint |
+| **Delivery** | Docker (multi-stage) · GitHub Actions · Render |
+
+---
+
+## 🚀 Quick start
+
+### Option 1 — No database needed (recommended)
+
+Requires Java 17+ and Node.js 20.19+ / 22.12+. The `dev` profile uses an in-memory database.
 
 ```bash
 # Terminal 1 — backend on :8080
 cd collabboard-backend
-./mvnw spring-boot:run -Dspring-boot.run.profiles=dev   # Windows: .\mvnw.cmd
+./mvnw spring-boot:run -Dspring-boot.run.profiles=dev      # Windows: .\mvnw.cmd
 
 # Terminal 2 — frontend on :5173
 cd collabboard-frontend
@@ -109,191 +206,225 @@ npm ci
 npm run dev
 ```
 
-Open **http://localhost:5173**. Boards live in memory and reset when the backend
-stops; the H2 console is at `http://localhost:8080/h2-console` (JDBC URL
-`jdbc:h2:mem:collabboard`, user `sa`, no password). For persistence across
-restarts, use the PostgreSQL setup below instead.
+Open **http://localhost:5173**, create a room, and open the same link in a second tab to collaborate with yourself.
 
-On Windows you can just double-click **`start-collabboard.cmd`**, which does all
-of the above and opens the browser. **`stop-collabboard.cmd`** shuts it down.
+> **Windows:** double-click `start-collabboard.cmd` to do all of the above, and `stop-collabboard.cmd` to stop.
 
-### Sharing the board
+<details>
+<summary><b>Option 2 — Everything in Docker</b></summary>
 
-`localhost` links only work on your own machine. Click **Share** in the top bar —
-it detects this and offers your LAN address instead, so anyone on the same WiFi
-can join. For a permanent public link, see **[DEPLOY.md](DEPLOY.md)**.
+<br/>
 
----
+```bash
+docker compose up --build
+```
 
-## 🚀 Local Setup (PostgreSQL)
+Starts PostgreSQL, the backend and the frontend. Open **http://localhost:5173**. Data persists in the `collabboard_pgdata` volume; `docker compose down -v` wipes it.
 
-### 1. Create the database
+</details>
+
+<details>
+<summary><b>Option 3 — With your own PostgreSQL</b></summary>
+
+<br/>
 
 ```bash
 createdb collabboard
-```
 
-(Or via psql: `CREATE DATABASE collabboard;`)
-
-### 2. Configure and run the backend
-
-```bash
 cd collabboard-backend
-cp .env.example .env    # or just export the variables below
 export DB_URL=jdbc:postgresql://localhost:5432/collabboard
 export DB_USERNAME=postgres
 export DB_PASSWORD=yourpassword
-export CORS_ALLOWED_ORIGINS=http://localhost:5173
 ./mvnw spring-boot:run
+
+cd ../collabboard-frontend
+npm ci && npm run dev
 ```
 
-The API starts on `http://localhost:8080`. Tables are auto-created by Hibernate (`ddl-auto=update`).
+Tables are created automatically on first start.
 
-### 3. Run the frontend
+</details>
 
-```bash
-cd collabboard-frontend
-npm install
-npm run dev
-```
+<details>
+<summary><b>Sharing a local board with another device</b></summary>
 
-### 4. Open the app
+<br/>
 
-Visit **http://localhost:5173**, create a room, copy the link, and open it in a second tab or browser to see real-time collaboration.
+`localhost` links only work on your own machine. Click **Share** in the top bar: it detects this and offers your network address instead, so anyone on the same WiFi can join. For a public link, see [Deploying](#-deploying).
 
-> In dev the frontend talks to the backend on port 8080 of whatever host you opened the page on, and the `dev` profile allows that origin, so no CORS setup is needed locally.
+</details>
 
 ---
 
 ## 🧪 Tests
 
 ```bash
-# Backend — JUnit 5 against an in-memory H2 database, including tests that
-# drive the real WebSocket endpoint on a live port
-cd collabboard-backend && ./mvnw test
-
-# Frontend — Vitest (jsdom) and ESLint
-cd collabboard-frontend && npm test && npm run lint
+cd collabboard-backend  && ./mvnw test                  # 102 tests
+cd collabboard-frontend && npm test && npm run lint     # 138 tests + ESLint
 ```
 
-Both suites, the linter, a dependency audit and both Docker image builds run in GitHub Actions on every push and pull request (`.github/workflows/ci.yml`).
+| Suite | What it covers |
+| ----- | -------------- |
+| **Backend** | Room lifecycle, snapshot changes, **concurrent writers**, board limits, event sanitising, presence, rate limiting, REST contracts, and **live WebSocket tests** with real STOMP clients |
+| **Frontend** | Board operations and undo entries, the board hook (optimistic edits, resync replay), pending-edit reconciliation, the API client, drawing utilities and UI components |
+
+GitHub Actions runs both suites, the linter, a dependency audit and all three Docker image builds on every push.
 
 ---
 
-## 🔧 Environment Variables
+## 🔌 API reference
 
-### Backend (`collabboard-backend`)
+<details>
+<summary><b>REST endpoints</b></summary>
 
-| Variable               | Description                                            | Default                                        |
-| ---------------------- | ------------------------------------------------------ | ---------------------------------------------- |
-| `DB_URL`               | JDBC URL for PostgreSQL                                | `jdbc:postgresql://localhost:5432/collabboard` |
-| `DB_USERNAME`          | Database username                                      | `postgres`                                     |
-| `DB_PASSWORD`          | Database password                                      | `password`                                     |
-| `DATABASE_URL`         | Alternative to the three above: a `postgresql://user:pass@host/db` URL, as Render/Railway/Heroku inject | –     |
-| `PORT`                 | HTTP port                                              | `8080`                                         |
-| `CORS_ALLOWED_ORIGINS` | Comma-separated allowed origins (REST **and** SockJS)  | the service's own URL on Render, otherwise `*` |
-| `ROOM_RETENTION_DAYS`  | Delete rooms idle for this many days; `0` keeps them forever | `0`                                      |
-| `ROOM_CREATIONS_PER_MINUTE` | Rooms one client address may create per minute; `0` = unlimited | `20`                             |
-| `DB_POOL_SIZE`         | Maximum database connections                           | `5`                                            |
+<br/>
 
-### Frontend (`collabboard-frontend`)
+| Method | Path | Description |
+| ------ | ---- | ----------- |
+| `POST` | `/api/rooms` | Create a room → `201` with a 6-character code (`429` when rate-limited) |
+| `GET` | `/api/rooms/{code}` | Fetch a room and its board snapshot (`404` if unknown; codes are case-insensitive) |
+| `PUT` | `/api/rooms/{code}/name` | Rename the board — body `{"boardName": "..."}` |
+| `DELETE` | `/api/rooms/{code}/clear` | Reset the board to empty |
+| `GET` | `/api/rooms/{code}/users` | Who is online in the room |
+| `GET` | `/api/health` | `{status, timestamp, roomCount}` |
+| `GET` | `/api/network` | Host LAN addresses for the share dialog (**`dev` profile only**) |
 
-| Variable             | Description                       | Default                       |
-| -------------------- | --------------------------------- | ----------------------------- |
-| `VITE_API_BASE_URL`  | Base URL of the backend API       | port 8080 on the page's host (dev) / same origin |
-| `VITE_WS_URL`        | SockJS WebSocket endpoint         | `<API base>/ws`               |
+Errors are RFC 7807 problem details: `{"status": 404, "detail": "Room not found: ABC123"}`.
 
-Both are read at **build** time. Leave them unset locally; set them when the API is on a different host (see [DEPLOY.md](DEPLOY.md)).
+</details>
 
----
+<details>
+<summary><b>WebSocket (STOMP over SockJS at <code>/ws</code>)</b></summary>
 
-## 🔌 API Reference
+<br/>
 
-### REST
+| Direction | Destination | Payload |
+| --------- | ----------- | ------- |
+| send | `/app/room/{code}/draw` | A board event |
+| send | `/app/room/{code}/presence` | `{type: "join", userId, userName, userColor}` or `{type: "leave"}` |
+| subscribe | `/topic/room/{code}` | Every board event for the room |
+| subscribe | `/topic/room/{code}/presence` | The online roster whenever it changes |
 
-| Method   | Path                          | Description                                          |
-| -------- | ----------------------------- | ---------------------------------------------------- |
-| `POST`   | `/api/rooms`                  | Create a room → `201` with a 6-character code (`429` when rate-limited) |
-| `GET`    | `/api/rooms/{code}`           | Fetch a room + its board snapshot (`404` if unknown; codes are case-insensitive) |
-| `PUT`    | `/api/rooms/{code}/name`      | Rename the board — body `{"boardName": "..."}` (offline fallback for the `rename` STOMP event) |
-| `DELETE` | `/api/rooms/{code}/clear`     | Reset the board snapshot to `[]`                     |
-| `GET`    | `/api/rooms/{code}/users`     | Current presence roster for the room (each person once) |
-| `GET`    | `/api/health`                 | `{status, timestamp, roomCount}`                     |
-| `GET`    | `/api/network`                | `{addresses}` — host LAN IPs for the share dialog (**`dev` profile only**) |
+**Event types**
 
-### WebSocket (STOMP over SockJS at `/ws`)
+| Type | Saved? | Meaning |
+| ---- | :----: | ------- |
+| `draw` | ✅ | Add a shape (replaces one with the same id) |
+| `update` | ✅ | Replace an existing shape. Never creates one |
+| `delete` | ✅ | Remove shapes by id |
+| `clear` / `replace` | ✅ | Empty or swap the whole board |
+| `rename` | ✅ | Change the board name; the server echoes the tidied name |
+| `preview` | – | Text being typed, shown live |
+| `cursor` / `laser` | – | Pointer position / laser stroke |
+| `sync` | – | Marker a client sends after reconnecting |
+| `rejected` | – | Server → client: a change could not be applied |
 
-| Direction | Destination                   | Payload                                                                       |
-| --------- | ----------------------------- | ----------------------------------------------------------------------------- |
-| send      | `/app/room/{code}/draw`       | Draw event (`draw`, `update`, `delete`, `replace`, `clear`, `rename`, `preview`, `cursor`, `laser`, `sync`) |
-| send      | `/app/room/{code}/presence`   | `{type: "join", userId, userName, userColor}` or `{type: "leave"}`              |
-| subscribe | `/topic/room/{code}`          | Every draw event broadcast to the room                                        |
-| subscribe | `/topic/room/{code}/presence` | The room's user roster whenever it changes                                    |
+Limits: 256 KB per message, 5,000 shapes and 4 MB per board.
 
-Errors from the REST API are RFC 7807 problem details: `{"status": 404, "detail": "Room not found: ABC123"}`.
+</details>
 
-How the board channel behaves:
+<details>
+<summary><b>Environment variables</b></summary>
 
-- **Persisted vs relayed.** Board-altering types (`draw`, `update`, `delete`, `replace`, `clear`) are applied to the room snapshot under a database row lock, then broadcast. `cursor`, `laser`, `sync` and `preview` are relayed only.
-- **Validated.** Every event is sanitised server-side before it is stored or relayed: unknown types and malformed shapes are dropped, text and point counts are capped, and a board holds at most 5,000 shapes. Messages may be up to 256 KB.
-- **Ordered.** One client's events are processed in the order it sent them.
-- **`clientId`.** Each browser tab stamps its events with a unique `clientId` so it can ignore its own echo — which is what lets two tabs of the same person collaborate.
-- **`preview`.** Text being typed into a note or label is shared as `preview` events, so others see it live without a database write per keystroke; the finished edit is saved as one `update`. An `update` never creates a shape, so a note deleted while someone is still typing in it stays deleted.
-- **Optimistic, but convergent.** A tab applies its own edits immediately and treats the server's echo as confirmation. Until then it ignores incoming edits to the same shape, which the server will have applied first — so everyone ends on what the server saved.
-- **`rejected`.** If the server cannot apply an event (board full, room gone) it broadcasts `{type: "rejected", clientId, reason}`; the sending tab shows the reason and reloads the saved board.
-- **`sync`.** After (re)connecting, a client flushes anything it queued while offline, sends `sync`, and reloads the snapshot when the marker comes back.
-- **`rename`** updates the board's name rather than its snapshot, and the server echoes the normalised (trimmed, ≤100 char) name back to every subscriber so all clients agree.
-- **Presence** is tracked per connection: a person with two tabs open is listed once and stays online until the last tab closes.
+<br/>
+
+**Backend**
+
+| Variable | Description | Default |
+| -------- | ----------- | ------- |
+| `DATABASE_URL` | `postgresql://user:pass@host/db`, as hosting providers inject | – |
+| `DB_URL` · `DB_USERNAME` · `DB_PASSWORD` | Alternative: the JDBC URL and credentials separately | local PostgreSQL |
+| `PORT` | HTTP port | `8080` |
+| `CORS_ALLOWED_ORIGINS` | Comma-separated allowed origins (REST and WebSocket) | the service's own URL on Render, otherwise `*` |
+| `ROOM_RETENTION_DAYS` | Delete rooms idle for this many days; `0` keeps them | `0` |
+| `ROOM_CREATIONS_PER_MINUTE` | Rooms one address may create per minute | `20` |
+| `DB_POOL_SIZE` | Maximum database connections | `5` |
+
+**Frontend** (read at build time; leave unset unless the API is on a different host)
+
+| Variable | Description | Default |
+| -------- | ----------- | ------- |
+| `VITE_API_BASE_URL` | Backend base URL | derived from the page's address |
+| `VITE_WS_URL` | WebSocket endpoint | `<API base>/ws` |
+
+</details>
+
+<details>
+<summary><b>Project structure</b></summary>
+
+<br/>
+
+```
+CollabBoard/
+├── collabboard-backend/                 Spring Boot API + WebSocket server
+│   └── src/main/java/com/collabboard/
+│       ├── config/                      WebSocket, CORS, rate limit, security headers
+│       ├── controller/                  REST (rooms, health) + STOMP (whiteboard)
+│       ├── dto/                         Draw event, shape, room, presence
+│       ├── model/                       Room entity
+│       ├── repository/                  Spring Data repository (with row locking)
+│       └── service/                     Rooms, event sanitizer, presence, cleanup
+├── collabboard-frontend/                React + Vite client
+│   └── src/
+│       ├── api/                         fetch-based room API
+│       ├── components/                  Landing, room, canvas, toolbars, minimap, cursors…
+│       ├── hooks/                       useBoard, useWebSocket, useHistory, useUserIdentity…
+│       └── utils/                       Board operations, pending edits, drawing helpers
+├── .github/workflows/ci.yml             Lint, test, audit and build images on every push
+├── Dockerfile                           Single image: frontend baked into the server
+├── render.yaml                          Render blueprint: app + database
+└── docker-compose.yml                   Local stack: db + backend + frontend
+```
+
+</details>
 
 ---
 
 ## ☁️ Deploying
 
-The whole app deploys to Render as **one service** from `render.yaml`: the root
-`Dockerfile` builds the frontend and bakes it into the Spring Boot server, which
-then serves the web UI, the API and the WebSocket from a single URL. There are
-no environment variables to set and no cross-origin configuration.
+The whole app deploys to Render as **one service**. The root `Dockerfile` builds the frontend and bakes it into the Spring Boot server, which then serves the web UI, the API and the WebSocket from a single URL — nothing to configure.
 
 1. Push the repo to GitHub.
 2. On Render: **New +** → **Blueprint** → select the repo → **Apply**.
 
-**[DEPLOY.md](DEPLOY.md)** has the full walkthrough, the optional settings, how
-to use a database that does not expire, and the alternative split deployment
-(frontend on Vercel, backend on Render).
-
-To run the same image yourself:
+Or run the same image anywhere:
 
 ```bash
 docker build -t collabboard .
 docker run -p 8080:8080 -e DATABASE_URL=postgresql://user:pass@host:5432/collabboard collabboard
 ```
 
+[DEPLOY.md](DEPLOY.md) has the full walkthrough, optional settings, how to use a database that does not expire, and the alternative split deployment.
+
 ---
 
-## ⚠️ Known Limitations
+## ⚠️ Known limitations
 
 - **No authentication** — anyone with a room code can view and edit that board.
-- **Last write wins per shape.** There is no CRDT: if two people edit the *same* shape at the same moment, the later event replaces the earlier one. Edits to different shapes never conflict.
-- **Undo history is per tab and in memory**, so it is lost on reload. Undoing a delete puts the shape back on top rather than at its old depth.
-- **Single backend instance.** Presence and the message broker are in memory, so the roster resets on restart and running several instances would need an external broker (snapshot writes are already safe across instances).
-- **Idle rooms are kept by default.** Set `ROOM_RETENTION_DAYS` to have rooms with no activity for that long deleted hourly.
-- **Export captures the visible part of the board**, not the whole canvas.
-- **Render free tier spin-down:** the backend sleeps after ~15 minutes of inactivity; the first request after that can take 30–60s.
-- **Render free PostgreSQL expiry:** free databases are removed ~30 days after creation.
+- **Last write wins per shape** — two people editing the *same* shape at the same instant: the later edit replaces the earlier one. Edits to different shapes never conflict.
+- **Undo history is per tab** and is lost on reload.
+- **Single server instance** — presence and the message broker are in memory; several instances would need an external broker.
+- **Export captures the visible area**, not the whole canvas.
 
 ---
 
 ## 🤝 Contributing
 
-1. Fork the repo and create a feature branch: `git checkout -b feature/my-feature`.
-2. Commit your changes with clear messages.
-3. Run `./mvnw test` and `npm test`, then verify real-time sync locally with two browser tabs.
-4. Open a pull request describing what changed and why.
-
-Issues and suggestions are welcome — please include reproduction steps for bugs.
+1. Fork the repo and create a branch: `git checkout -b feature/my-feature`
+2. Make your change, then run `./mvnw test` and `npm test && npm run lint`
+3. Check real-time sync locally with two browser tabs
+4. Open a pull request describing what changed and why
 
 ---
 
+<div align="center">
+
 ## 📄 License
 
-MIT — do whatever you like, attribution appreciated.
+MIT — see [LICENSE](LICENSE).
+
+<br/>
+
+**[▶ Try the live demo](https://collabboard-3vp6.onrender.com)** · If you like the project, a ⭐ on GitHub is appreciated.
+
+</div>
