@@ -12,7 +12,7 @@ No sign-up. No install. Just a link.
 [![Live Demo](https://img.shields.io/badge/▶_Live_Demo-collabboard--3vp6.onrender.com-6366F1?style=for-the-badge)](https://collabboard-3vp6.onrender.com)
 
 [![CI](https://github.com/saurabhshreni-cmyk/CollabBoard/actions/workflows/ci.yml/badge.svg)](https://github.com/saurabhshreni-cmyk/CollabBoard/actions/workflows/ci.yml)
-![Tests](https://img.shields.io/badge/tests-240_passing-22c55e)
+![Tests](https://img.shields.io/badge/tests-241_passing-22c55e)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
 ![Java](https://img.shields.io/badge/Java-17-ED8B00?logo=openjdk&logoColor=white)
@@ -185,7 +185,7 @@ Each of these was reproduced with a failing test before it was fixed — includi
 | **Database** | PostgreSQL 16 (H2 in memory for development and tests) |
 | **Frontend** | React 18 · Vite 8 · Konva + react-konva · perfect-freehand · @stomp/stompjs · React Router 7 · Tailwind CSS |
 | **Testing** | JUnit 5 · AssertJ · Mockito · Spring Boot Test · Vitest · Testing Library · ESLint |
-| **Delivery** | Docker (multi-stage) · GitHub Actions · Render |
+| **Delivery** | Docker (multi-stage) · GitHub Actions · Render · Neon (PostgreSQL) |
 
 ---
 
@@ -259,7 +259,7 @@ Tables are created automatically on first start.
 ## 🧪 Tests
 
 ```bash
-cd collabboard-backend  && ./mvnw test                  # 102 tests
+cd collabboard-backend  && ./mvnw test                  # 103 tests
 cd collabboard-frontend && npm test && npm run lint     # 138 tests + ESLint
 ```
 
@@ -372,7 +372,7 @@ CollabBoard/
 │       └── utils/                       Board operations, pending edits, drawing helpers
 ├── .github/workflows/ci.yml             Lint, test, audit and build images on every push
 ├── Dockerfile                           Single image: frontend baked into the server
-├── render.yaml                          Render blueprint: app + database
+├── render.yaml                          Render blueprint: the web service
 └── docker-compose.yml                   Local stack: db + backend + frontend
 ```
 
@@ -382,10 +382,11 @@ CollabBoard/
 
 ## ☁️ Deploying
 
-The whole app deploys to Render as **one service**. The root `Dockerfile` builds the frontend and bakes it into the Spring Boot server, which then serves the web UI, the API and the WebSocket from a single URL — nothing to configure.
+The app deploys to Render as **one free service**, with boards stored in a free **[Neon](https://neon.com)** PostgreSQL database (Render's own free database is deleted after 30 days; Neon's does not expire). The root `Dockerfile` builds the frontend and bakes it into the Spring Boot server, which then serves the web UI, the API and the WebSocket from a single URL.
 
-1. Push the repo to GitHub.
-2. On Render: **New +** → **Blueprint** → select the repo → **Apply**.
+1. Create a free Neon project and copy its connection string.
+2. Push the repo to GitHub.
+3. On Render: **New +** → **Blueprint** → select the repo → paste the connection string as `DATABASE_URL` → **Apply**.
 
 Or run the same image anywhere:
 
@@ -394,7 +395,7 @@ docker build -t collabboard .
 docker run -p 8080:8080 -e DATABASE_URL=postgresql://user:pass@host:5432/collabboard collabboard
 ```
 
-[DEPLOY.md](DEPLOY.md) has the full walkthrough, optional settings, how to use a database that does not expire, and the alternative split deployment.
+[DEPLOY.md](DEPLOY.md) has the full walkthrough, optional settings, moving an existing deployment to Neon, and the alternative split deployment.
 
 ---
 

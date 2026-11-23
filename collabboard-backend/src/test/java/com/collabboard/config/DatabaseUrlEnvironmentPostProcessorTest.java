@@ -43,6 +43,20 @@ class DatabaseUrlEnvironmentPostProcessorTest {
     }
 
     @Test
+    void convertsANeonStyleUrlKeepingItsSslSettings() {
+        Map<String, Object> props = DatabaseUrlEnvironmentPostProcessor.translate(
+                "postgresql://neondb_owner:npg_AbC123@ep-cool-cloud-a1b2c3.ap-southeast-1.aws.neon.tech/neondb"
+                        + "?sslmode=require&channel_binding=require");
+
+        assertThat(props)
+                .containsEntry("spring.datasource.url",
+                        "jdbc:postgresql://ep-cool-cloud-a1b2c3.ap-southeast-1.aws.neon.tech/neondb"
+                                + "?sslmode=require&channel_binding=require")
+                .containsEntry("spring.datasource.username", "neondb_owner")
+                .containsEntry("spring.datasource.password", "npg_AbC123");
+    }
+
+    @Test
     void defaultsThePortWhenTheUrlOmitsIt() {
         Map<String, Object> props = DatabaseUrlEnvironmentPostProcessor.translate(
                 "postgresql://user:pass@host/db");

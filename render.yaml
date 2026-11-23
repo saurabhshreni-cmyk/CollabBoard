@@ -1,15 +1,13 @@
-# Render blueprint — deploys the whole app (web UI + API + database) in one step.
+# Render blueprint — deploys the whole app (web UI + API + WebSocket) as one
+# free web service.
+#
+# The database is NOT created here. Render's free PostgreSQL is deleted 30 days
+# after creation, so the app uses an external PostgreSQL instead — for example
+# Neon's free plan, which does not expire (see DEPLOY.md).
 #
 # Usage: push this repo to GitHub, then in Render click
-#   New +  ->  Blueprint  ->  select the repo  ->  Apply.
-# There is nothing to configure afterwards: the server serves the web UI
-# itself, so the app lives at a single URL with no cross-origin settings.
-
-databases:
-  - name: collabboard-db
-    databaseName: collabboard
-    user: collabboard
-    plan: free
+#   New +  ->  Blueprint  ->  select the repo  ->  Apply
+# Render asks for DATABASE_URL once; paste the database's connection string.
 
 services:
   - type: web
@@ -21,13 +19,13 @@ services:
     dockerContext: .
     healthCheckPath: /api/health
     envVars:
-      # Render supplies a postgresql:// URL. DatabaseUrlEnvironmentPostProcessor
-      # converts it to the jdbc:postgresql:// form Spring needs, and pulls the
-      # username and password out of it, so nothing else is required here.
+      # A postgresql:// connection string, e.g. from Neon:
+      #   postgresql://user:password@ep-xxxx.region.aws.neon.tech/neondb?sslmode=require
+      # DatabaseUrlEnvironmentPostProcessor converts it to the jdbc:postgresql://
+      # form Spring needs and pulls the username and password out of it.
+      # `sync: false` means Render asks for the value and never overwrites it.
       - key: DATABASE_URL
-        fromDatabase:
-          name: collabboard-db
-          property: connectionString
+        sync: false
       # CORS_ALLOWED_ORIGINS is deliberately not set: the server then allows
       # only its own public URL (RENDER_EXTERNAL_URL, provided by Render).
       # Set it only if you host the frontend somewhere else, e.g. on Vercel.

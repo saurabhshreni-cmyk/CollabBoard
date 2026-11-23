@@ -97,7 +97,7 @@ Java 17 + Spring Boot 3 backend, React 18 + Vite frontend, PostgreSQL persistenc
 
 ## Quality
 
-- [x] **Backend tests** (102) — JUnit 5 + Spring Boot Test against in-memory H2: room lifecycle, snapshot mutations,
+- [x] **Backend tests** (103) — JUnit 5 + Spring Boot Test against in-memory H2: room lifecycle, snapshot mutations,
       concurrent writers, board limits, event sanitising, presence, rate limiting, REST contracts, platform
       database-URL translation, and integration tests that drive the real STOMP endpoint on a live port
 - [x] **Frontend tests** (138) — Vitest + Testing Library: board operations and undo entries, the board hook
@@ -109,7 +109,7 @@ Java 17 + Spring Boot 3 backend, React 18 + Vite frontend, PostgreSQL persistenc
 - [x] **Reproducible checkouts** — `.gitattributes` normalises line endings so shell
       scripts and the wrapper keep working on Linux CI after a Windows commit
 - [x] **One-click deployment** — the root `Dockerfile` bakes the frontend into the server, so `render.yaml` deploys the
-      whole app as a single service with one URL and no settings to fill in
+      whole app as a single service with one URL; the only setting is the database connection string
 - [x] **Deployment ready** — `render.yaml` blueprint, `vercel.json` and `nginx.conf` with security headers (CSP,
       nosniff, frame denial) and correct caching, non-root Docker image with layer-cached dependencies, and a
       step-by-step [DEPLOY.md](DEPLOY.md)
