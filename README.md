@@ -19,9 +19,10 @@ No sign-up. No install. Just a link.
 ![Spring Boot](https://img.shields.io/badge/Spring_Boot-3.5-6DB33F?logo=springboot&logoColor=white)
 ![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black)
 ![Vite](https://img.shields.io/badge/Vite-8-646CFF?logo=vite&logoColor=white)
-![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Neon-4169E1?logo=postgresql&logoColor=white)
 ![WebSocket](https://img.shields.io/badge/WebSocket-STOMP-010101)
 ![Docker](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white)
+![Render](https://img.shields.io/badge/Hosted_on-Render-46E3B7?logo=render&logoColor=white)
 
 <br/>
 
@@ -29,7 +30,7 @@ No sign-up. No install. Just a link.
   <img src="docs/screenshots/board.png" alt="A CollabBoard board with a flow diagram, sticky notes, hand-drawn strokes and emoji stamps" width="900"/>
 </a>
 
-<sub>The live demo runs on a free plan, so the first visit after a quiet spell takes up to a minute while the server wakes up.</sub>
+<sub>The live demo runs on free plans (Render for the app, Neon for the database), so the first visit after a quiet spell takes up to a minute while the server wakes up.</sub>
 
 <br/><br/>
 
@@ -141,7 +142,7 @@ flowchart LR
         RT --> Broker
     end
 
-    DB[("🐘 PostgreSQL<br/>rooms")]
+    DB[("🐘 PostgreSQL on Neon<br/>rooms")]
 
     Board -- "HTTP: create / load a room" --> REST
     WS <-- "WebSocket: live events" --> RT
@@ -155,6 +156,24 @@ Two channels, each for what it is good at:
 | ------- | -------- | --- |
 | **REST over HTTP** | Creating and loading a room | One question, one answer. Also how a client recovers after reconnecting |
 | **STOMP over WebSocket** | Drawing, cursors, presence | The server must push to every browser the instant something changes |
+
+### Live deployment
+
+```mermaid
+flowchart LR
+    U(["👥 Users"]) -- "HTTPS + WSS" --> R
+
+    subgraph R["Render · free web service (Docker)"]
+        direction TB
+        SPA["React app<br/>static files"]
+        API["Spring Boot<br/>REST + WebSocket"]
+    end
+
+    API -- "SSL" --> N[("🐘 Neon<br/>PostgreSQL")]
+    GH["GitHub<br/>push to main"] -- "CI + auto-deploy" --> R
+```
+
+One Docker image serves the web app, the API and the WebSocket from a single address, so there is no cross-origin setup. Boards live in Neon's free PostgreSQL, which, unlike Render's free database, does not expire.
 
 ---
 
@@ -182,7 +201,7 @@ Each of these was reproduced with a failing test before it was fixed — includi
 | Layer | Technology |
 | ----- | ---------- |
 | **Backend** | Java 17 · Spring Boot 3.5 · Spring WebSocket (STOMP + SockJS) · Spring Data JPA · Lombok |
-| **Database** | PostgreSQL 16 (H2 in memory for development and tests) |
+| **Database** | PostgreSQL — Neon in production, H2 in memory for development and tests |
 | **Frontend** | React 18 · Vite 8 · Konva + react-konva · perfect-freehand · @stomp/stompjs · React Router 7 · Tailwind CSS |
 | **Testing** | JUnit 5 · AssertJ · Mockito · Spring Boot Test · Vitest · Testing Library · ESLint |
 | **Delivery** | Docker (multi-stage) · GitHub Actions · Render · Neon (PostgreSQL) |
@@ -332,7 +351,7 @@ Limits: 256 KB per message, 5,000 shapes and 4 MB per board.
 
 | Variable | Description | Default |
 | -------- | ----------- | ------- |
-| `DATABASE_URL` | `postgresql://user:pass@host/db`, as hosting providers inject | – |
+| `DATABASE_URL` | A `postgresql://user:pass@host/db?sslmode=require` connection string, e.g. from Neon | – |
 | `DB_URL` · `DB_USERNAME` · `DB_PASSWORD` | Alternative: the JDBC URL and credentials separately | local PostgreSQL |
 | `PORT` | HTTP port | `8080` |
 | `CORS_ALLOWED_ORIGINS` | Comma-separated allowed origins (REST and WebSocket) | the service's own URL on Render, otherwise `*` |
